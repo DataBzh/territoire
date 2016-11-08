@@ -60,14 +60,6 @@ bret$tag__name <- gsub("^crédit mutuel$", "crédit mutuel de bretagne", bret$ta
 bret$tag__name <- gsub("^ca$", "crédit agricole", bret$tag__name)
 bret$tag__name <- gsub("banque populaire de l'ouest", "banque populaire", bret$tag__name)
 
-
-
-
-
-
-
-
-
 ggtheme <- gtheme <- theme(axis.text=element_text(size=10),
                            axis.title=element_text(size=15),
                            title=element_text(size=18),
