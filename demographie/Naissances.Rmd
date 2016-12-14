@@ -1,0 +1,141 @@
+---
+title: "Naissances en Bretagne"
+output: html_notebook
+---
+
+```{r Setup, echo = F}
+source("../DataBzhTools/main.R")
+load("naissances.RData")
+```
+
+Après un premier billet sur les [décès](http://data-bzh.fr/demographie-bretonne-volet-1-les-deces/), nous allons nous intéresser aux naissances en Bretagne administrative...
+
+## Données
+
+Les données sont produites par l'INSEE, et sont disponibles sur la page [État civil : naissances et décès en 2015](http://www.insee.fr/fr/themes/detail.asp?reg_id=0&ref_id=fd-etatcivil2015).
+
+Le jeu de données contient de nombreuses informations (anonymisées) comme le département de naissance, le sexe de l'enfant, l'âge des parents ou le moment de reconnaissance par les parents.
+
+Dans cette étude, nous exploiterons le département et le sexe des enfants nés en **Bretagne** en **2015**.
+
+## Analyse exploratoire
+
+En 2015, **`r prettyNum(nrow(n), " ")`** enfants sont nés en France, dont **`r prettyNum(nrow(n.bzh), " ")`** en Bretagne (soit **`r prettyNum(round(nrow(n.bzh) / nrow(n) * 100, 2), " ")`%**).
+
+Quelle est la répartition selon les départements?
+
+```{r Departement, echo = F}
+tbl <- as.data.frame(table(n.bzh$depnais))
+names(tbl) <- c("dept", "count")
+tbl <- tbl[tbl$count != 0,]
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(dept, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Département") +
+    ylab("Quantité") +
+    ggtitle("Naissances par département en 2015") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/01-dept.png")
+```
+
+C'est dans le département de l'**Ille et Vilaine** qu'il y a eu le plus de naissances (**`r prettyNum(tbl[tbl$dept == 35, "count"], " ")`**). Viennent ensuite le Finistère, le Morbihan et les Côtes d'Armor.
+
+Sur l'ensemble de la France, l'Ille et Vilaine se place en **`r which(order(table(n$depnais), decreasing = T) == 35)`ème** position.
+
+Qu'en est-il de la répartition garçon/fille?
+
+```{r Sexe, echo = F}
+tbl <- as.data.frame(table(n.bzh$sexe))
+names(tbl) <- c("sexe", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(sexe, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Sexe") +
+    ylab("Quantité") +
+    ggtitle("Naissances par sexe en 2015") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/02-sexe.png")
+```
+
+Il y a eu légèrement plus de garçons que de filles à naître (différence de **`r abs(tbl[tbl$sexe == "Garçon", "count"] - tbl[tbl$sexe == "Fille", "count"])`**). Sur ce point la Bretagne ne se différencie pas du reste de la France (**`r prettyNum(nrow(n[n$sexe == "Garçon",]), " ")`** garçons contre **`r prettyNum(nrow(n[n$sexe == "Fille",]), " ")`** filles sur la France entière).
+
+Croisons ces 2 analyses afin d'obtenir une visualisation selon le sexe et le département.
+
+```{r DeptSexe, echo = F}
+tbl.h <- as.data.frame(table(n.bzh[n.bzh$sexe == "Garçon",]$depnais))
+tbl.h$sexe <- "Garçon"
+tbl.f <- as.data.frame(table(n.bzh[n.bzh$sexe == "Fille",]$depnais))
+tbl.f$sexe <- "Fille"
+tbl <- rbind(tbl.h, tbl.f)
+names(tbl) <- c("dept", "count", "sexe")
+tbl <- tbl[tbl$count != 0,]
+tbl$sexe <- factor(tbl$sexe)
+
+cols <- c("Fille" = "red", "Garçon" = "blue")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(dept, count, fill = sexe)) +
+    geom_bar(stat = "identity", alpha = .25) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 4, colour = "grey30", nudge_y = ifelse(tbl$sexe == "Garçon", -1, 1) * 1500) +
+    xlab("Département") +
+    ylab("Sexe") +
+    ggtitle("Naissances par département et sexe en 2015") +
+    scale_fill_manual("", values = cols) +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/03-dept_sexe.png")
+```
+
+Cette tendance est aussi observée pour chaque département, avec toujours un léger avantage pour les garçons.
+
+Revenons au niveau régional, mais cette fois-ci en zoomant sur les mois.
+
+```{r Mois, echo = F}
+tbl.h <- as.data.frame(table(n.bzh[n.bzh$sexe == "Garçon",]$mnais))
+tbl.h$sexe <- "Garçon"
+tbl.f <- as.data.frame(table(n.bzh[n.bzh$sexe == "Fille",]$mnais))
+tbl.f$sexe <- "Fille"
+tbl.all <- as.data.frame(table(n.bzh$mnais))
+tbl.all$sexe <- "Cumulé"
+tbl <- rbind(tbl.h, tbl.f, tbl.all)
+names(tbl) <- c("mois", "count", "sexe")
+tbl$mois <- as.integer(tbl$mois)
+tbl$sexe <- factor(tbl$sexe)
+
+cols <- c("Garçon" = "blue", "Fille" = "red", "Cumulé" = "black")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(mois, count, colour = sexe)) +
+    geom_line(size = 1, alpha = .5) +
+    geom_text(
+      aes(label = prettyNum(count, " ")),
+      size = 4,
+      nudge_y = sapply(as.character(tbl$sexe), function(s) switch(s, Garçon = 100, Fille = -100, Cumulé = 100)),
+      show.legend = F
+    ) +
+    scale_x_continuous(breaks = 1:12) +
+    scale_y_continuous(limits = c(0, 3500)) +
+    scale_colour_manual("", values = cols) +
+    xlab("Mois") +
+    ylab("Quantité") +
+    ggtitle("Naissances par mois en 2015") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/04-mois.png")
+```
+
+Le plus grand nombre de naissances de garçons s'observe tout au long de l'année. Seul le mois d'**août** fait exception, avec cette fois-ci un nombre plus important de filles.
+
+Fait anecdoticque : il y a eu autant de garçons que de filles (**`r prettyNum(tbl$count[tbl$mois == 12 & tbl$sexe == "Fille"], " ") `**) à naître au mois de décembre.
+
+Ainsi s'achève cette analyse exploratoire des naissances en Bretagne. Dans un prochain billet, nous nous placerons du point de vue de la mère, en étudiant les accouchements.

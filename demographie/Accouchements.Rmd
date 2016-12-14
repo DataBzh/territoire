@@ -1,0 +1,201 @@
+---
+title: "Accouchements en Bretagne"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+```{r Setup, echo = F}
+source("../DataBzhTools/main.R")
+load("naissances.RData")
+```
+
+Après un billet sur les [naissances](http://data-bzh.fr/demographie-bretonne-volet-2-les-naissances/), nous allons cette fois-ci nous placer du point de vue de la mère, en étudiant les accouchements en Bretagne administrative.
+
+## Données
+
+Les données sont produites par l'INSEE, et sont disponibles sur la page [État civil : naissances et décès en 2015](http://www.insee.fr/fr/themes/detail.asp?reg_id=0&ref_id=fd-etatcivil2015).
+
+Le jeu de données contient de nombreuses informations (anonymisées) comme le département de naissance, le sexe de l'enfant, l'âge des parents ou le moment de reconnaissance par les parents.
+
+Dans cette étude, nous exploiterons l'âge de la mère, le nombre de mois depuis le précédent accouchement et le département de naissance pour la **Bretagne** en **2015**.
+
+++Méthode de déduction des accouchements++
+
+Le jeu de données a été constitué à partir des bulletins d'état civil envoyés par les mairies ayant enregistré les actes de naissance. Il y a donc 1 entrée par naissance. Il se trouve qu'une femme accouchant peut donner naissance à plus d'un enfant. Le nombre d'accouchements ne peut donc pas être directement déduit du nombre de naissances. Un travail de regroupement a donc été effectué afin de supprimer les doublons (cas de mise au monde de jumeaux ou triplés).
+
+## Analyse exploratoire
+
+Il y a eu **`r prettyNum(nrow(a.bzh), " ")`** accouchements en Bretagne en 2015 (pour **`r prettyNum(nrow(n.bzh), " ")`** naissances).
+
+Pour étudier l'âge de la mère au moment de la naissance, nous allons utiliser 2 types de visualisation : l'[histogramme](https://fr.wikipedia.org/wiki/Histogramme), et la [boite à moustache](https://fr.wikipedia.org/wiki/Boîte_à_moustaches).
+
+```{r AgeMereHist, echo = F}
+(ggp <- databzhPlot(
+  ggplot(data = a.bzh, aes(agemere)) +
+    geom_histogram(binwidth = 1, fill = databzh$colour) +
+    geom_vline(xintercept = median(a.bzh$agemere), linetype = "dashed") +
+    scale_x_continuous(breaks = seq(0, max(a.bzh$agemere), by = 5)) +
+    xlab("Age") +
+    ylab("Quantité") +
+    ggtitle("Distribution de l'âge de la mère en 2015") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/01-age_mere_hist.png")
+```
+
+L'âge moyen de la mère est de **`r round(mean(a.bzh$agemere), 2)` ans** (âge médian de **`r median(a.bzh$agemere)` ans**, représenté par la ligne en pointillés).
+
+```{r AgeMereBoxplot, echo = F}
+(ggp <- databzhPlot(
+  ggplot(
+    data = a.bzh,
+    aes("", agemere)
+  ) +
+    geom_boxplot(fill = databzh$colour) +
+    coord_flip() +
+    scale_y_continuous(breaks = seq(0, max(a.bzh$agemere), by = 5)) +
+    xlab("") +
+    ylab("Age") +
+    ggtitle("Age de la mère en 2015") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/02-age_mere_boxplot.png")
+```
+
+```{r quantiles, echo = F}
+q4 <- quantile(a.bzh$agemere)
+q10 <- quantile(a.bzh$agemere, seq(0, 1, .1))
+```
+
+50% des mères ont entre **`r q4[2]` et `r q4[3]` ans**.
+
+Si l'on décompose la distribution en tranches de 10% (déciles) de la population, on observe que 80% des mères ont entre **`r q10[2]` et `r q10[10]` ans**.
+
+```{r Déciles, echo = F}
+q10
+
+#cat(commonmark::markdown_html(as.character(knitr::kable(t(as.matrix(q10)))), extensions = "table"))
+```
+
+Regardons si la distribution de l'âge de la mère varie en fonction du département.
+
+```{r AgeMereDeptBoxplot, echo = F}
+(ggp <- databzhPlot(
+  ggplot(
+    data = a.bzh,
+    aes(depnais, agemere)
+  ) +
+    geom_boxplot(fill = databzh$colour) +
+    scale_y_continuous(breaks = seq(0, max(a.bzh$agemere), by = 5)) +
+    xlab("") +
+    ylab("Age") +
+    ggtitle("Age de la mère par département en 2015") +
+    databzhTheme(),
+  ypos = "bottom"
+))
+
+#databzhSavePlot(ggp, "publish/04-age_mere_dept_boxplot.png")
+```
+
+La distribution de l'âge de la mère est similaire entre départements. On observe néanmoins que l'âge médian pour les Côtes d'Armor est de (**`r median(a.bzh[a.bzh$depnais == 22,]$agemere)` ans**), soit 1 ans plus jeune que les autres départements.
+
+```{r Age90_100, echo = F}
+m_90_100 <- a.bzh[a.bzh$agemere >= q10[10],]
+m_90_100$premgros <- is.na(m_90_100$durecevp)
+```
+
+Sur les **`r prettyNum(nrow(a.bzh), " ")`** femmes ayant accouché en Bretagne en 2015, **`r prettyNum(nrow(m_90_100), " ")`** avaient **`r q10[10]` ans** et plus.
+
+Dans combien de cas s'agissait-il du premier enfant?
+
+```{r TypeGrossesse, echo = F}
+tbl <- as.data.frame(table(m_90_100$premgros))
+names(tbl) <- c("premgros", "count")
+tbl$premgros <- as.factor(tbl$premgros)
+levels(tbl$premgros) <- c("Nouvel enfant", "1er enfant")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(premgros, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Grossesse") +
+    ylab("Quantité") +
+    ggtitle(paste("Types de grossesses pour les femmes de", q10[10], "ans et plus en en 2015")) +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/05-type_grossesse.png")
+```
+
+**`r round(tbl[tbl$premgros == "1er enfant",]$count / sum(tbl$count) * 100, 2)`%** des femmes de **`r q10[10]` ans** et plus ont accouché pour la première fois (et pour **`r table(m_90_100$nbenf)[2]`** d'entre elles, il s'agissait de jumeaux).
+
+Le tableau ci-dessous nous indique la répartition du nombre d'enfants par accouchement (toujours pour les femmes de **`r q10[10]` ans** et plus).
+
+```{r JumeauxTriplés, echo = F}
+tbl <- table(a.bzh$nbenf)
+names(tbl) <- c("1 enfant", "jumeaux", "triplés")
+tbl
+
+#cat(commonmark::markdown_html(as.character(knitr::kable(t(tbl))), extensions = "table"))
+```
+
+Terminons par une dernière analyse.
+
+Qui n'a pas déjà entendu dire que les enfants étaient plutôt conçus à la fin de l'été ou au début de l'automne? Un des arguments en faveur de cette assertion vient probablement du fait que les mariages ont le plus souvent lieu le printemps ou l'été, et qu'un heureux évènement survient généralement peu de temps après que l'union ait été officialisée : si cela pouvait-être vrai il y a de cela quelques générations, il y a fort à parier que l'évolution du mode de vie aura modifié cette tendance.
+
+Pour le vérifier, nous partirons du principe que toutes les grossesses ont eu une durée normale, soit 9 mois, que l'on retirera donc du mois de l'accouchement.
+
+```{r ConceptionSaison, echo = F}
+tbl <- as.data.frame(table(a.bzh$sconc))
+names(tbl) <- c("sconc", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(sconc, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 6, colour = "grey50") +
+    xlab("Saison") +
+    ylab("Quantité") +
+    ggtitle("Saison de conception en 2015") +
+    databzhTheme(),
+  ypos = "bottom",
+  type = "url.background"
+))
+
+#databzhSavePlot(ggp, "publish/07-conception_saison.png")
+```
+
+Alors que le niveau est similaire pour toutes les autres saisons, c'est en **automne** que l'on a le plus conçu d'enfants en 2015. Il y a-t-il une (ou plusieurs) raison(s), ou bien est-ce simplement le fait du hasard (il faudrait pour le déterminer comparer avec les autres années). Nous laisserons le soin aux lecteurs de formuler leurs propres hypothèses.
+
+Il est à noter que si l'on zoome au niveau du mois, la tendance par saison s'avère beaucoup moins évidente : en effet, les mois se suivent de façon plutôt chaotique, sans mettre en évidence une réelle tendance.
+
+```{r ConceptionMois, echo = F}
+tbl <- as.data.frame(table(a.bzh$mconc))
+names(tbl) <- c("mconc", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(mconc, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 6, colour = "grey50") +
+    xlab("Mois") +
+    ylab("Quantité") +
+    ggtitle("Mois de conception en 2015") +
+    databzhTheme(),
+  ypos = "bottom",
+  type = "url.background"
+))
+
+#databzhSavePlot(ggp, "publish/08-conception_mois.png")
+```
+
+Ainsi s'achève cette étude des accouchements en Bretagne. Ce type d'analyse, factuelle, ne doit pas nous faire oublier que derrière ces chiffres se cachent parfois des personnes (en l'occurence ici des femmes), avec toute l'éventail de drames auxquels elles peuvent-être confrontées (deuil périnatal, grossesse mortelle, etc.).
+
+Ce billet vient clore note série sur la démographie bretonne, dans laquelle nous avons évoqué :
+
+- Les [décès](http://data-bzh.fr/demographie-bretonne-volet-1-les-deces/).
+- Les [naissances](http://data-bzh.fr/demographie-bretonne-volet-2-les-naissances/).
+- Les accouchements.
+
+Le code R utilisé est disponible sur notre dépôt de sources [Github](https://github.com/DataBzh/territoire).

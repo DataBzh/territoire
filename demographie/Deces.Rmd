@@ -1,0 +1,300 @@
+---
+title: "Décès en Bretagne"
+output:
+  html_document: default
+  html_notebook: default
+  pdf_document: default
+  
+---
+
+```{r Setup, echo = F}
+source("../DataBzhTools/main.R")
+```
+
+Après des datasnacks sur les [naissances](http://data-bzh.fr/naissance-rennes-sexe/) et les [décès](http://data-bzh.fr/datasnack-16-deces-a-rennes-lieu-sexe-1986-2015/) à Rennes, nous allons nous intéresser plus en détails aux décès en Bretagne administrative...
+
+## Données
+
+Les données sont produites par l'INSEE, et sont disponibles sur la page [État civil : naissances et décès en 2015](http://www.insee.fr/fr/themes/detail.asp?reg_id=0&ref_id=fd-etatcivil2015).
+
+```{r Chargement, echo = F}
+library(foreign)
+d <- read.dbf(file = "data/etatcivil2015_dec2015_dbase/dec2015.dbf", as.is = T)
+```
+
+```{r Recodage, echo = F}
+d$activ <- factor(d$activ, labels = c("retraité", "inactif", "actif"))
+d$adec <- as.integer(d$adec)
+d$anais <- as.integer(d$anais)
+d$age <- d$adec - d$anais
+d$depdec <- factor(d$depdec)
+d$depdom <- factor(d$depdom)
+d$depnais <- factor(d$depnais)
+d$etamat <- factor(d$etamat, labels = c("célibataire", "marié", "veuf", "divorcé"))
+d$indnat <- factor(d$indnat, labels = c("française", "étrangère"))
+d$lieudecr <- factor(d$lieudecr, labels = c("autre", "hôpital ou clinique", "hospice, maison de retraite", "logement ou domicile"))
+d$mdec <- factor(d$mdec)
+d$sexe <- factor(d$sexe, labels = c("homme", "femme"))
+d$tucom <- factor(d$tucom)
+d$tudom <- factor(d$tudom)
+
+# Trimestre du décès
+d$qdec <- d$mdec
+levels(d$qdec) <- as.character(rep(1:4, each = 3))
+
+# Saison du décès
+d$sdec <- d$mdec
+levels(d$sdec) <- rep(c("hiver", "printemps", "été", "automne"), each = 3)
+```
+
+```{r Bretagne, echo = F}
+# Filtrage sur la Bretagne
+d.bzh <- d[d$depdec %in% c(22, 29, 35, 56),]
+```
+
+Le jeu de données contient de nombreuses informations (anonymisées) comme les départements de naissance et de décès, le code activité (actif, retraité, etc.), l'état matrimonial ou le lieu du décès.
+
+Dans cette étude, nous exploiterons le département, le sexe et l'âge des décédés en **Bretagne** en **2015**.
+
+## Analyse exploratoire
+
+En 2015, **`r prettyNum(nrow(d), " ")`** personnes sont décédées en France, dont **`r prettyNum(nrow(d.bzh), " ")`** en Bretagne (soit **`r prettyNum(round(nrow(d.bzh) / nrow(d) * 100, 2), " ")`%**).
+
+Quelle est la répartition selon les départements?
+
+```{r Departement, echo = F}
+tbl <- as.data.frame(table(d.bzh$depdec))
+names(tbl) <- c("dept", "count")
+tbl <- tbl[tbl$count != 0,]
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(dept, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Département") +
+    ylab("Quantité") +
+    ggtitle("Décès par département en 2015") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/01-dept.png")
+```
+
+C'est dans le département du **Finistère** qu'il y a eu le plus de décès (**`r prettyNum(tbl[tbl$dept == 29, "count"], " ")`**). Viennent ensuite l'Ille et Vilaine, le Morbihan et les Côtes d'Armor.
+
+Poursuivons en nous intéressant à l'âge du décès (meurt-on jeune ou vieux?).
+
+```{r Age, echo = F}
+(ggp <- databzhPlot(
+  ggplot(data = d.bzh, aes(age)) +
+    geom_histogram(binwidth = 1, fill = databzh$colour) +
+    geom_vline(xintercept = median(d.bzh$age), linetype = "dashed") +
+    scale_x_continuous(breaks = seq(0, max(d.bzh$age), by = 10)) +
+    xlab("Age") +
+    ylab("Quantité") +
+    ggtitle("Distribution de l'âge des décès en 2015") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/02-age.png")
+```
+
+Le coefficient de dissymétrie (skewness) est négatif (negative skew distribution), ce qui signifie qu'il y a une plus forte concentration de décès au delà de l'âge médian (symbolisé par la ligne noire en pointillés, et qui coupe la population en 2 parties égales), qui est de **`r median(d.bzh$age)` ans**.
+
+Autrement dit, la plupart des décès survenant "tardivement" le seront dans une plage d'âge relativement réduite (une vingtaine d'année).
+
+Ajoutons que la personne la plus âgée avait **`r max(d.bzh$age)` ans**.
+
+Cas particulier : on observe la présence anormale de décès sur les premières années. Focalisons-nous sur les moins de 5 ans.
+
+```{r AgeInf5, echo = F}
+d.bzh.age5 <- d.bzh[d.bzh$age < 5,]
+```
+
+En 2015, en Bretagne, **`r nrow(d.bzh.age5)`** personnes de **moins de 5 ans** sont décédées.
+
+```{r AgeInf5Histogram, echo = F}
+tbl <- as.data.frame(table(d.bzh.age5$age))
+names(tbl) <- c("age", "count")
+tbl$age <- as.integer(tbl$age)
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(age, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = count), size = 8, colour = "grey50") +
+    xlab("Age") +
+    ylab("Quantité") +
+    ggtitle("Décès des moins de 5 ans en 2015") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/03-age_5.png")
+```
+
+C'est essentiellement dans les premiers mois de l'existence que l'on constate le plus grand nombre de décès. On peut supposer qu'ils sont le fait d'accidents domestiques, qui semble être l'une des premières causes de mortalité chez les enfants (sources : http://www.accidents-domestiques.com/, http://www.planetoscope.com/mortalite/1450-deces-par-accidents-domestiques-en-france.html).
+
+Ce risque de fin de vie prématurée est passé une fois franchi le cap de la première année.
+
+Qu'en est-il de la répartition homme/femme?
+
+```{r Sexe, echo = F}
+tbl <- as.data.frame(table(d.bzh$sexe))
+names(tbl) <- c("sexe", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(sexe, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Sexe") +
+    ylab("Quantité") +
+    ggtitle("Décès par sexe en 2015") +
+    databzhTheme(),
+  type = "url.background",
+  xpos = "right",
+  ypos = "bottom"
+))
+
+#databzhSavePlot(ggp, "publish/04-sexe.png")
+```
+
+Il y a eu légèrement plus de femmes que d'hommes à décéder (différence de **`r abs(tbl[tbl$sexe == "homme", "count"] - tbl[tbl$sexe == "femme", "count"])`**).
+
+Quelle est la durée de vie des hommes par rapport aux femmes?
+
+```{r AgeSexe, echo = F}
+(ggp <- databzhPlot(
+  ggplot(
+    data = d.bzh,
+    aes(sexe, age)
+  ) +
+    geom_boxplot(fill = databzh$colour) +
+    xlab("Sexe") +
+    ylab("Age") +
+    ggtitle("Age du décès par sexe en 2015") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/05-age_sexe.png")
+```
+
+*On se référera à l'article [Wikipédia](https://fr.wikipedia.org/wiki/Boîte_à_moustaches) pour en savoir plus sur l'interprétation des boîtes à moustache.*
+
+En Bretagne, les femmes vivent plus longtemps que les hommes.
+
+La tendance est nette si l'on regarde l'âge de décès par quartile (c.à.d par tranche de 25% de la population).
+
+```{r AgeSexeQuartiles, echo = F}
+qtl.h <- quantile(d.bzh[d.bzh$sexe == "homme",]$age)
+qtl.f <- quantile(d.bzh[d.bzh$sexe == "femme",]$age)
+qtl.df <- as.data.frame(rbind(qtl.h, qtl.f))
+row.names(qtl.df) <- c("Hommes", "Femmes")
+qtl.df
+```
+
+L'âge médian du décès pour les hommes est de **`r qtl.h[3]` ans** contre **`r qtl.f[3]` ans** pour les femmes. 25% des hommes les plus âgés décèdent entre **`r qtl.h[4]` et `r qtl.h[5]` ans**, contre **`r qtl.f[4]` et `r qtl.f[5]` ans** pour les femmes.
+
+```{r AgeSexeHF, echo = F}
+d.bzh.h <- d.bzh[d.bzh$sexe == "homme",]
+d.bzh.f <- d.bzh[d.bzh$sexe == "femme",]
+cols <- c("Femmes" = "red", "Hommes" = "blue")
+
+(ggp <- databzhPlot(
+  ggplot(data = d.bzh, aes(age)) +
+    geom_histogram(data = d.bzh.h, aes(age, fill = "Hommes"), binwidth = 1, alpha = .25) +
+    geom_vline(xintercept = median(d.bzh.h$age), col = "blue", linetype = "dashed") +
+    geom_histogram(data = d.bzh.f, aes(age, fill = "Femmes"), binwidth = 1, alpha = .25) +
+    geom_vline(xintercept = median(d.bzh.f$age), col = "red", linetype = "dashed") +
+    scale_x_continuous(breaks = seq(0, max(d.bzh$age), by = 10)) +
+    xlab("Age") +
+    ylab("Quantité") +
+    ggtitle("Distribution de l'âge des décès par sexe en 2015") +
+    databzhTheme() +
+    scale_fill_manual("", values = cols)
+))
+
+#databzhSavePlot(ggp, "publish/06-age_sexe_hf.png")
+```
+
+Cette tendance s'observe aisément si l'on superpose la distribution de l'âge des décès des hommes et des femmes (la zone mauve correspond à l'espace commun aux 2 groupes).
+
+Passons maintenant aux décès par mois.
+
+```{r AgeMois, echo = F}
+plotByMonth <- function(data, info = "") {
+  tbl <- as.data.frame(table(data$mdec))
+  names(tbl) <- c("mdec", "count")
+  
+  databzhPlot(
+    ggplot(data = data, aes(mdec, age)) +
+      geom_boxplot(fill = databzh$colour) +
+      geom_text(data = tbl, aes(x = mdec, y = 100, label = prettyNum(count, " ")), size = 3, colour = "grey50") +
+      scale_y_continuous(breaks = seq(0, max(d.bzh$age), by = 10)) +
+      xlab("Mois") +
+      ylab("Age") +
+      ggtitle(paste("Décès par mois en", unique(data$adec), info)) +
+      databzhTheme()
+  )
+}
+
+(ggp <- plotByMonth(d.bzh))
+#databzhSavePlot(ggp, "publish/07-age_mois.png")
+```
+
+Dé-zoomons en passant aux décès par saisons.
+
+```{r AgeSaison, echo = F}
+plotBySeason <- function(data, info = "") {
+  tbl <- as.data.frame(table(data$sdec))
+  names(tbl) <- c("sdec", "count")
+  
+  databzhPlot(
+    ggplot(data = data, aes(sdec, age)) +
+      geom_boxplot(fill = databzh$colour) +
+      geom_text(data = tbl, aes(x = sdec, y = 100, label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+      scale_y_continuous(breaks = seq(0, 100, by = 10)) +
+      xlab("Saison") +
+      ylab("Age") +
+      ggtitle(paste("Décès par saisons en", unique(data$adec), info)) +
+      databzhTheme(),
+    ypos = "bottom"
+  )
+}
+
+(ggp <- plotBySeason(d.bzh))
+#databzhSavePlot(ggp, "publish/08-age_saison.png")
+```
+
+C'est en automne-hiver que l'on observe un âge médian de décès le plus élevé.
+
+De plus, l'âge est beaucoup plus concentré en hiver, avec un âge moyen plus élevé (**80 ans**).
+
+On peut supposer que la rigueur de l'hiver s'avère plus néfaste à nos aînés.
+
+```{r AgeSaisonTbl, echo = F}
+# Nombre de décès par saisons
+seasons <- as.data.frame(table(d.bzh$sdec))
+names(seasons) <- c("Saison", "Somme")
+# Age moyen par saisons
+seasons$Moyenne <- sapply(levels(d.bzh$sdec), function(s) { floor(mean(d.bzh[d.bzh$sdec == s, "age"])) })
+# Age médian par saisons
+seasons$Median <- sapply(levels(d.bzh$sdec), function(s) { median(d.bzh[d.bzh$sdec == s, "age"]) })
+
+seasons
+```
+
+Zoomons en passant aux décès dans chaque département.
+
+```{r AgeSaisonDept, echo = F}
+(ggp <- plotBySeason(subset(d.bzh, depdec == 22), sprintf("(%s)", paste("dept", 22))))
+#databzhSavePlot(ggp, "publish/09-age_saison_22.png")
+(ggp <- plotBySeason(subset(d.bzh, depdec == 29), sprintf("(%s)", paste("dept", 29))))
+#databzhSavePlot(ggp, "publish/10-age_saison_29.png")
+(ggp <- plotBySeason(subset(d.bzh, depdec == 35), sprintf("(%s)", paste("dept", 35))))
+#databzhSavePlot(ggp, "publish/11-age_saison_35.png")
+(ggp <- plotBySeason(subset(d.bzh, depdec == 56), sprintf("(%s)", paste("dept", 56))))
+#databzhSavePlot(ggp, "publish/12-age_saison_56.png")
+```
+
+On observe les mêmes tendances au niveau départemental qu'au niveau régional.
+
+Ainsi s'achève cette analyse exploratoire des décès en Bretagne. Le [jeu de données](http://www.insee.fr/fr/themes/detail.asp?reg_id=0&ref_id=fd-etatcivil2015) de l'INSEE regorge d'informations que chacun pourra exploiter à souhait.

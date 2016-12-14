@@ -1,0 +1,263 @@
+---
+title: "Etude de la carte scolaire rennaise"
+output: html_notebook
+author: Michel Caradec
+---
+
+*Réalisé avec RStudio 1.0.44 notebook.*
+
+## Préambule
+
+L'idée de cette étude est venue lors d'une discussion au sujet de l'incohérence qu'il semble parfois y avoir concernant les règles de répartition de la carte scolaire. Il peut ainsi arriver que pour une même rue, l'accès aux écoles ne soit pas le même en fonction du numéro de résidence.
+
+La question s'est alors posée de savoir si les contours de la cartes scolaire de la ville de Rennes suivaient une règle de segmentation purement mathématique.
+
+L'étude portera sur les **écoles publiques primaires**.
+
+```{r setup}
+switch(
+  Sys.info()[["sysname"]],
+  Windows = {},
+  Linux  = {},
+  Darwin = {lc <- Sys.setlocale("LC_ALL", "en_US.UTF-8")}
+)
+```
+
+## Données
+
+Les données proviennent du site **Open Data** de [Rennes Métropole](https://data.rennesmetropole.fr).
+
+### Ecoles de Rennes
+
+Source : [Ecoles maternelles et primaires de Rennes](https://data.rennesmetropole.fr/explore/dataset/ecoles-rennes/).
+
+```{r ds_ecoles}
+ecoles_rennes <- read.csv2("data/ecoles-rennes.csv", dec = ".")
+ecoles_maternelle <- subset(ecoles_rennes, grepl("maternelle", OrgaNom))
+ecoles_primaire <- subset(ecoles_rennes, grepl("élémentaire", OrgaNom))
+ecoles_autres <- ecoles_rennes[-c(as.integer(row.names(ecoles_maternelle)), as.integer(row.names(ecoles_primaire))),]
+
+ecoles <- ecoles_primaire
+ecoles[, c("OrgaNom", "QuarNom")]
+```
+
+Le jeu de données contient **`r nrow(ecoles)`** établissements.
+
+#### Carte des écoles publiques primaires
+
+```{r map_ecoles}
+library(leaflet)
+library(htmltools)
+
+leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ecoles$Longitude,
+    lat = ecoles$Latitude,
+    popup = paste0(
+      "<p>", "Ecole : <b>", htmlEscape(ecoles$OrgaNom), "</b>", "</p>",
+      "<p>", "Quartier : <b>", htmlEscape(ecoles$QuarNom), "</b>", "</p>"
+    ),
+    clusterOptions = markerClusterOptions()
+  )
+```
+
+*Cliquer sur les cercles bleus pour visualiser le nom de l'établissement.*
+
+### Rues de Rennes
+
+Source : [Adresses du référentiel voies et adresses de Rennes Métropole](https://data.rennesmetropole.fr/explore/dataset/adresses-du-referentiel-voies-et-adresses-de-rennes-metropole/).
+
+```{r ds_adresses}
+adresses_metropole <- read.csv2("data/adresses-du-referentiel-voies-et-adresses-de-rennes-metropole.csv", dec = ".", stringsAsFactors = F)
+adresses_rennes <- subset(adresses_metropole, nom == "Rennes")
+
+longlat <- lapply(adresses_rennes$Geo.Point, function(x) { strsplit(x, ", ") })
+adresses_rennes$Latitude = as.numeric(sapply(longlat, function(x) { x[[1]][1] }))
+adresses_rennes$Longitude = as.numeric(sapply(longlat, function(x) { x[[1]][2] }))
+
+# Nettoyage
+adresses_metropole <- NULL
+longlat <- NULL
+```
+
+#### Rues de Rennes
+
+Le jeu de données contient **`r nrow(adresses_rennes)`** rues.
+
+```{r rues_rennes}
+plot(
+  adresses_rennes$Longitude,
+  adresses_rennes$Latitude,
+  pch = ".",
+  cex = .1,
+  cex.axis = .8,
+  cex.lab = .8,
+  col = rgb(.5, .5, .5, .8),
+  xlab = "longitude",
+  ylab = "latitude",
+  main = "Rues de Rennes"
+)
+```
+
+## Segmentation
+
+### k-means
+
+```{r adresses_kmeans}
+secteur_count <- length(unique(ecoles$QuarNom))
+
+adresses_kmeans <- kmeans(adresses_rennes[, c("Longitude", "Latitude")], secteur_count, algorithm = "Lloyd", iter.max = 100)
+adresses_rennes$cluster <- adresses_kmeans$cluster
+
+# Assignation des secteurs aux écoles
+library(class)
+
+ecoles$cluster <- knn(
+  adresses_rennes[, c("Longitude", "Latitude")],
+  ecoles[, c("Longitude", "Latitude")],
+  adresses_rennes$cluster
+)
+```
+
+Définition de la carte scolaire selon la méthode des [k-means](https://fr.wikipedia.org/wiki/K-moyennes), pour **`r secteur_count` secteurs**.
+
+```{r map_adresses_kmeans}
+cols <- rainbow(secteur_count)
+
+map_adresses <- leaflet() %>%
+  addTiles() %>%
+  # Ecoles
+  addCircleMarkers(
+    lng = ecoles$Longitude,
+    lat = ecoles$Latitude,
+    popup = paste0(
+      "<p>", "Ecole : <b>", htmlEscape(ecoles$OrgaNom), "</b>", "</p>",
+      "<p>", "Quartier : <b>", htmlEscape(ecoles$QuarNom), "</b>", "</p>",
+      "<p>", "Secteur : <b>", htmlEscape(ecoles$cluster), "</b>", "</p>"
+    ),
+    color = "black",
+    fillColor = cols[ecoles$cluster],
+    fillOpacity = .5,
+    clusterOptions = markerClusterOptions()
+  )
+
+# Rues par segments
+for (k in 1:secteur_count) {
+  map_adresses <-  map_adresses %>%
+    addCircles(
+      lng = adresses_rennes[adresses_rennes$cluster == k, ]$Longitude,
+      lat = adresses_rennes[adresses_rennes$cluster == k, ]$Latitude,
+      radius = 5,
+      opacity = .1,
+      color = cols[k]
+    )
+}
+
+# Barycentres des segments (centroïdes)
+map_adresses <- map_adresses %>%
+  addMarkers(
+    lng = adresses_kmeans$centers[, "Longitude"],
+    lat = adresses_kmeans$centers[, "Latitude"],
+    popup = paste0("Secteur ", "<b>", 1:secteur_count, "</b>"),
+    clusterOptions = markerClusterOptions()
+  )
+
+map_adresses
+```
+
+*Cliquer sur les cercles aux contours noirs pour visualiser le nom de l'établissement.*
+
+Etablissements par secteurs, selon la carte scolaire.
+
+```{r ecoles_secteurs}
+library(formattable)
+
+secteurs <- data.frame(Secteur = levels(ecoles$QuarNom))
+secteurs$Etablissement <- sapply(
+  secteurs$Secteur,
+  function(q) {
+    paste0("<li>", ecoles[ecoles$QuarNom == q, "OrgaNom"], "</li>", collapse = "")
+  }
+)
+
+formattable(secteurs)
+```
+
+Etablissements par secteurs, selon la segmentation.
+
+```{r ecoles_contigence}
+cont <- outer(
+  levels(ecoles$QuarNom),
+  1:secteur_count,
+  Vectorize(
+    function(x, y) {
+      c <- nrow(ecoles[ecoles$QuarNom == x & ecoles$cluster == y,])
+      return(ifelse(c == 0, "", c))
+    }
+  )
+)
+row.names(cont) <- levels(ecoles$QuarNom)
+colnames(cont) <- paste0(1:secteur_count)
+formattable(as.data.frame(cont))
+```
+
+Le montant à l'intersection d'un secteur (lignes) et d'un segment (colonnes) indique le nombre d'établissements pour ce secteur affectés à ce segment.
+
+La dispersion des établissements d'un secteur sur plusieurs segments indique que la carte scolaire ne suit pas une logique mathématique.
+
+### Diagramme de Voronoï
+
+Quelle serait la répartition des rues si un secteur ne correspondait qu'à **une école et une seule** (nombre de secteurs = nombre d'écoles = **`r nrow(ecoles)`**) ?
+
+La segmentation peut-être réalisée avec un [diagramme de Voronoï](https://fr.wikipedia.org/wiki/Diagramme_de_Voronoï).
+
+```{r ecoles_voronoi}
+library(tripack)
+
+ecoles_voronoi <- voronoi.mosaic(ecoles$Longitude, ecoles$Latitude)
+ecoles_polygons <- voronoi.polygons(ecoles_voronoi)
+```
+
+```{r map_ecoles_voronoi}
+map_ecoles <- leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(
+    lng = ecoles$Longitude,
+    lat = ecoles$Latitude,
+    popup = paste0(
+      "<p>", "Ecole : <b>", htmlEscape(ecoles$OrgaNom), "</b>", "</p>",
+      "<p>", "Quartier : <b>", htmlEscape(ecoles$QuarNom), "</b>", "</p>"
+    ),
+    clusterOptions = markerClusterOptions()
+  )
+
+for (p in 1:length(ecoles_polygons)) {
+  map_ecoles <- map_ecoles %>%
+    addPolygons(
+      lng = ecoles_polygons[[p]][,1],
+      lat = ecoles_polygons[[p]][,2],
+      color = rainbow(length(ecoles_polygons))[p]
+    )
+}
+
+map_ecoles
+```
+
+*Cliquer sur les cercles bleus pour visualiser le nom de l'établissement.*
+
+## Conclusion
+
+L'organisation de la vie en société est rarement le résultat d'une démarche exclusivement scientifique, car impactée par une histoire et diverses influences. C'est donc sans surprise que l'on constate un écart entre la carte scolaire actuelle, et celle obtenue par segmentation.
+
+Cette étude aura été l'occasion d'utiliser des "algorithmes" tels que **k-means**, **k-nearest-neighbor** et **diagrammes de Voronoï** avec le logiciel **R**, sur la base de données issues de l'**Open Data** de Rennes Métropole.
+
+<!--
+TODO: écart entre zone kmeans et zone réelle
+TODO: trouver les zones affectées à chaque adresse
+
+Secteur 1-3 : http://www.ia35.ac-rennes.fr/jahia/Jahia/site/ia35/pid/6739
+
+Sectorisation (2015)
+http://www.ia35.ac-rennes.fr/jahia/Jahia/lang/fr/pid/17911
+-->
