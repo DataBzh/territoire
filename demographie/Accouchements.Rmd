@@ -22,7 +22,7 @@ Dans cette étude, nous exploiterons l'âge de la mère, le nombre de mois depui
 
 ++Méthode de déduction des accouchements++
 
-Le jeu de données a été constitué à partir des bulletins d'état civil envoyés par les mairies ayant enregistré les actes de naissance. Il y a donc 1 entrée par naissance. Il se trouve qu'une femme accouchant peut donner naissance à plus d'un enfant. Le nombre d'accouchements ne peut donc pas être directement déduit du nombre de naissances. Un travail de regroupement a donc été effectué afin de supprimer les doublons (cas de mise au monde de jumeaux ou triplés).
+Le jeu de données a été constitué à partir des bulletins d'état civil envoyés par les mairies ayant enregistré les actes de naissance. Il y a donc une entrée par naissance. Il se trouve qu'une femme accouchant peut donner naissance à plus d'un enfant. Le nombre d'accouchements ne peut donc pas être directement déduit du nombre de naissances. Un travail de regroupement a donc été effectué afin de supprimer les doublons (cas de mise au monde de jumeaux ou triplés).
 
 ## Analyse exploratoire
 
@@ -100,7 +100,7 @@ Regardons si la distribution de l'âge de la mère varie en fonction du départe
 #databzhSavePlot(ggp, "publish/04-age_mere_dept_boxplot.png")
 ```
 
-La distribution de l'âge de la mère est similaire entre départements. On observe néanmoins que l'âge médian pour les Côtes d'Armor est de (**`r median(a.bzh[a.bzh$depnais == 22,]$agemere)` ans**), soit 1 ans plus jeune que les autres départements.
+La distribution de l'âge de la mère est similaire entre départements. On observe néanmoins que l'âge médian pour les Côtes d'Armor est de (**`r median(a.bzh[a.bzh$depnais == 22,]$agemere)` ans**), soit 1 ans plus jeune que dans les autres départements.
 
 ```{r Age90_100, echo = F}
 m_90_100 <- a.bzh[a.bzh$agemere >= q10[10],]
@@ -123,7 +123,7 @@ levels(tbl$premgros) <- c("Nouvel enfant", "1er enfant")
     geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
     xlab("Grossesse") +
     ylab("Quantité") +
-    ggtitle(paste("Types de grossesses pour les femmes de", q10[10], "ans et plus en en 2015")) +
+    ggtitle(paste("Types de grossesses pour les femmes de", q10[10], "ans et plus en 2015")) +
     databzhTheme()
 ))
 
@@ -135,8 +135,8 @@ levels(tbl$premgros) <- c("Nouvel enfant", "1er enfant")
 Le tableau ci-dessous nous indique la répartition du nombre d'enfants par accouchement (toujours pour les femmes de **`r q10[10]` ans** et plus).
 
 ```{r JumeauxTriplés, echo = F}
-tbl <- table(a.bzh$nbenf)
-names(tbl) <- c("1 enfant", "jumeaux", "triplés")
+tbl <- table(m_90_100$nbenf)
+names(tbl) <- c("1 enfant", "jumeaux")
 tbl
 
 #cat(commonmark::markdown_html(as.character(knitr::kable(t(tbl))), extensions = "table"))
@@ -190,7 +190,7 @@ names(tbl) <- c("mconc", "count")
 #databzhSavePlot(ggp, "publish/08-conception_mois.png")
 ```
 
-Ainsi s'achève cette étude des accouchements en Bretagne. Ce type d'analyse, factuelle, ne doit pas nous faire oublier que derrière ces chiffres se cachent parfois des personnes (en l'occurence ici des femmes), avec toute l'éventail de drames auxquels elles peuvent-être confrontées (deuil périnatal, grossesse mortelle, etc.).
+Ainsi s'achève cette étude des accouchements en Bretagne. Ce type d'analyse, factuelle, ne doit pas nous faire oublier que derrière ces chiffres se cachent parfois des personnes (en l'occurence ici des femmes), avec toute l'éventail de joies mais aussi de drames auxquels elles peuvent-être confrontées (deuil périnatal, grossesse mortelle, etc.).
 
 Ce billet vient clore note série sur la démographie bretonne, dans laquelle nous avons évoqué :
 
