@@ -1,0 +1,367 @@
+---
+title: "Elus en Ille et Vilaine"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+```{r Setup, echo = F}
+source("../DataBzhTools/main.R")
+load("elus35.RData")
+```
+
+Dans ce billet, nous allons nous intéresser aux élus départementaux d'Ille et Vilaine, ainsi qu'à leur représentativité par rapport à leurs administrés.
+
+## Données
+
+Afin d'effectuer les analyses souhaitées, 2 jeux de données sont nécessaires :
+
+- Données sur la **population**. Celles-ci sont produites par l'INSEE dans le cadre de son travail de recensement de la population, et sont disponibles sur la page [Recensement de la population - Base infracommunale (IRIS)](https://www.insee.fr/fr/statistiques/2386737). Elles portent sur la population en **2013**.
+- Données sur les **élus**. Ces données ne sont pas à notre connaissance disponibles en Open Data (c'est à dire accessibles dans un format structuré permettant une exploitation automatique). L'information est par contre consultable sur le [site du département Ille et Vilaine](http://www.illeetvilaine.fr/fr/elus). La collecte manuelle s’avérant trop fastidieuse, nous avons utilisé la méthode du [Data Scraping](https://en.wikipedia.org/wiki/Data_scraping), permettant l'extraction automatique des données.
+
+L'objectif étant de comparer les données de l'INSEE avec celles des élus, certains traitements complémentaires ont été effectués. Nous nous sommes par exemple appuyés sur l'[API](https://fr.wikipedia.org/wiki/Interface_de_programmation) [genderize.io](https://genderize.io) afin de déterminer le sexe d'un élu à partir de son prénom.
+
+## Analyse exploratoire
+
+Commençons par étudier les élus.
+
+### Les élus
+
+Pour mémoire, le conseil départemental (anciennement conseil général) est élu au suffrage universel dans le cadre des cantons. Sa compétence porte entre autres sur l'aide sociale, la voirie, l'éducation (gestion des collèges), la culture, le développement local ou le tourisme (source [Wikipedia](https://fr.wikipedia.org/wiki/Conseil_départemental)).
+
+Les élus départementaux d'Ille et Vilaine sont au nombre de **`r nrow(elus35)`**, répartis sur **`r length(unique(elus35$secteur))`** cantons.
+
+```{r ElusSexeEtiquette, echo = F}
+tbl <- data.frame(table(elus35$sexe, elus35$etiquette))
+names(tbl) <- c("sexe", "etiquette", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(etiquette, count, fill = sexe)) +
+    geom_bar(stat="identity") +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50", nudge_y = ifelse(tbl$sexe == "femme", 1, -1)) +
+    xlab("Etiquette") +
+    ylab("Sexe") +
+    ggtitle("Elus par sexe et étiquette") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/01-elus_sexe_etiquette.png")
+```
+
+Sans surprise, on observe une égalité stricte entre les hommes et les femmes, l'élection se faisant sur la base d'un homme et d'une femme pour chaque canton.
+
+```{r ElusVerifBinome, echo = F}
+e35 <- elus35
+e35$nom2 <- paste0(e35$prenom, " ", e35$nom)
+b35 <- merge(e35, e35[, -ncol(e35)], by.x = "nom2", by.y = "binome")
+b35$binome1 <- b35$nom2
+b35$sexe1 <- b35$sexe.x
+b35$binome2 <- b35$binome
+b35$sexe2 <- b35$sexe.y
+b35.same.sex <- b35[b35$sexe1 == b35$sexe2,c("binome1", "sexe1", "binome2", "sexe2")]
+```
+
+Une vérification des données collectées permet de constater cette parité pour chaque **binôme** (`r nrow(b35.same.sex)` binômes composés de personnes du même sexe).
+
+Seuls **`r length(unique(elus35$etiquette))`** mouvements politiques sont réprésentés : `r paste(unique(elus35$etiquette), collapse = ", ")`.
+
+Passons à l'étude de l'âge.
+
+```{r ElusAge, echo = F}
+tbl <- as.data.frame(table(elus35$tranche.age))
+names(tbl) <- c("tranche", "count")
+tbl <- tbl[tbl$tranche != "0-14",]
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(tranche, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Tranche d'âge") +
+    ylab("Quantité") +
+    ggtitle("Elus par tranche d'âge") +
+    databzhTheme()
+  )
+)
+
+#databzhSavePlot(ggp, "publish/02-elus_age.png")
+```
+
+C'est la tranche d'âge des **45-59 ans** qui est la plus représentée.
+
+Comme nous disposons de l'âge exact des élus, nous pouvons aller plus loin en affichant la répartition par quantiles.
+
+```{r ElusQuantile, echo = F}
+(q.age <- quantile(elus35$age))
+
+#writeLines(commonmark::markdown_html(as.character(knitr::kable(t(as.matrix(q.age)))), extensions = "table"), "publish/03-elus_quantile.html")
+```
+
+Puis par déciles.
+
+```{r ElusDeciles, echo = F}
+(q.age10 <- quantile(elus35$age, probs = seq(0, 1, by = .1)))
+
+#writeLines(commonmark::markdown_html(as.character(knitr::kable(t(as.matrix(q.age10)))), extensions = "table"), "publish/04-elus_deciles.html")
+```
+
+Puis visualiser la distribution à l'aide d'un histogramme.
+
+```{r ElusAgeHisto, echo = F}
+(ggp <- databzhPlot(
+  ggplot(data = elus35, aes(age)) +
+    geom_histogram(binwidth = 5, fill = databzh$colour) +
+    geom_vline(xintercept = median(elus35$age), linetype = "dashed") +
+    #geom_density() +
+    scale_x_continuous(breaks = seq(0, max(elus35$age), by = 1)) +
+    scale_y_continuous(breaks = seq(0, 15, by = 1)) +
+    xlab("Age") +
+    ylab("Quantité") +
+    ggtitle("Distribution de l'âge des élus") +
+    databzhTheme()
+  )
+)
+
+#databzhSavePlot(ggp, "publish/05-elus_age.png")
+```
+
+L'âge moyen d'un élu est de **`r round(mean(elus35$age), 1)` ans** (âge médian de **`r median(elus35$age)` ans**, représenté par la ligne en pointillés).
+
+Penchons-nous maintenant sur la profession dans la vie civile.
+
+```{r ElusCSP, echo = F}
+tbl <- as.data.frame(table(elus35$csp))
+names(tbl) <- c("csp", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(csp, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("CSP") +
+    ylab("Quantité") +
+    ggtitle("Catégories socio-professionelles des élus") +
+    databzhTheme()
+  )
+)
+
+#databzhSavePlot(ggp, "publish/06-elus_csp.png")
+```
+
+On constate une majorité écrasante de **cadres et professions supérieures** (cs3), qui représentent **`r round(nrow(elus35[elus35$csp == "cs3",]) / nrow(elus35), 2) * 100`%** des élus.
+
+Les codes des catégories socio-professionnelles sont énumérés dans la table ci-dessous.
+
+```{r CSPLabels, echo = F}
+(csp.df <- data.frame(
+  code = sapply(csp, function(x) x$code),
+  nom = sapply(csp, function(x) x$nom)
+))
+
+#writeLines(commonmark::markdown_html(as.character(knitr::kable(csp.df)), extensions = "table"), "publish/07-csp_labels.html")
+```
+
+Résumons les trois notions précédemment évoquées (l'âge, le sexe, la catégorie socio-professionnelle) en une visualisation.
+
+```{r ElusSummary, echo = F}
+tbl <- aggregate(nom ~ csp + tranche.age + sexe, data = elus35, length)
+names(tbl)[4] <- "count"
+
+cols <- c("femme" = "red", "homme" = "blue")
+# aggregate(count ~ csp + tranche.age, data = tbl, sum)
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(csp, tranche.age, fill = sexe, width = count / 8, height = count / 8)) +
+    geom_tile(alpha = .5) +
+    geom_text(
+      aes(label = tbl$count),
+      size = 5,
+      #fontface = "bold",
+      colour = cols[tbl$sexe],
+      nudge_y = ifelse(tbl$sexe == "femme", .1, -.1)
+    ) +
+    xlab("CSP") +
+    ylab("Age") +
+    ggtitle("Elus par catégorie socio-professionelle, âge, sexe") +
+    scale_fill_manual("", values = cols) +
+    databzhTheme()
+  )
+)
+
+#databzhSavePlot(ggp, "publish/08-elus_summary.png")
+```
+
+La surface des rectangles est proportionnelle au nombre d'élus pour chaque croisement âge x catégorie socio-professionnelle.
+
+Les chiffres à chaque croisement indiquent le nombre d'hommes (en bleu) et de femmes (en rouge) pour ce croisement.
+
+Les zones mauves correspondent à la superposition des hommes et des femmes.
+
+La [carte thermique](https://fr.wikipedia.org/wiki/Heat_map) suivante permet de restituer la même information, mais en cumulant le nombre d'hommes et de femmes.
+
+```{r ElusSummaryNumbers, echo = F}
+xtbl <- xtabs(count ~ tranche.age + csp, data = tbl)
+xtbl.df <- as.data.frame(xtbl[2:5,])
+
+(ggp <- databzhPlot(
+  ggplot(data = xtbl.df, aes(csp, tranche.age)) +
+    geom_tile(aes(fill = xtbl.df$Freq)) +
+    geom_text(aes(label = ifelse(xtbl.df$Freq == 0, "", xtbl.df$Freq)), size = 8) +
+    xlab("CSP") +
+    ylab("Age") +
+    ggtitle("Elus par catégorie socio-professionelle, âge") +
+    scale_fill_gradient(low = "white", high = databzh$colour) +
+    databzhTheme() +
+    theme(legend.position = "none"),
+    ypos = "bottom"
+  )
+)
+
+#databzhSavePlot(ggp, "publish/09-elus_summary_heatmap.png")
+```
+
+Ce sont les **hommes** et encore plus les **femmes** de la catégorie "**Cadres et Professions intellectuelles supérieures**" (cs3) dans la tranche d'âge **45-59 ans** qui sont le plus représentés (`r xtbl["45-59", "cs3"]` sur un total de `r nrow(elus35)`).
+
+Terminons cette exploration des élus avec le niveau de cumul des mandats.
+
+```{r ElusCumul, echo = F}
+tbl <- as.data.frame(table(elus35$mandat_count))
+names(tbl) <- c("mandats", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(mandats, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Nombre de mandats") +
+    ylab("Quantité") +
+    ggtitle("Cumul des mandats chez les élus") +
+    databzhTheme()
+  )
+)
+
+#databzhSavePlot(ggp, "publish/10-elus_cumul.png")
+```
+
+Seulement **`r nrow(elus35[elus35$mandat_count == 1,])`** élus (soit **`r round(nrow(elus35[elus35$mandat_count == 1,]) / nrow(elus35) * 100, 2)`%**) ont pour seul mandat celui de conseiller départemental. **`r round(nrow(elus35[elus35$mandat_count == 2,]) / nrow(elus35) * 100, 2)`%** des élus exercent un autre mandat, **`r round(nrow(elus35[elus35$mandat_count == 3,]) / nrow(elus35) * 100, 2)`%** deux autres mandats, en plus de leur profession.
+
+### Les élus par rapport à la population
+
+En 1859, Karl Marx écrivait dans la "Contribution à la critique de l’économie politique" : "C'est l'existence sociale qui détermine la conscience des hommes".
+
+Partons de ce propos et vérifions dans quelle mesure nos élus sont représentatifs de leurs administrés, selon les critères d'âge, de sexe et de profession.
+
+++Remarques++
+
+- Les notions d'âge et de catégorie socio-professionnelle sont dé-corrélées dans les données de recensement de l'INSEE, rendant impossible leur analyse combinée. La comparaison s'effectuera donc selon les critères d'âge et de sexe, puis de catégorie socio-professionnelle et de sexe.
+- Les tranches d'âge de moins de 16 ans (il faut être majeur pour être élu) et de 75 ans et plus n'étant pas représentées, celles-ci ont été exclues des données de recensement.
+
+Les élus seront représentés en bleu, la population en rouge. Ces deux catégories étant superposées, une correspondance stricte donnera un rectangle mauve, sans bordure bleu ou rouge.
+
+```{r CmpAgeSexe, echo = F}
+tbl.elus <- aggregate(nom ~ tranche.age + sexe, data = elus35, length)
+names(tbl.elus)[3] <- "count"
+tbl.elus$type <- "élus"
+tbl.elus$ratio <- tbl.elus$count / sum(tbl.elus$count)
+
+tbl.pop <- recens35.age[recens35.age$code != "0014" & recens35.age$code != "75p",]
+tbl.pop$tranche.age <- paste0(substr(tbl.pop$code, 1, 2), "-", substr(tbl.pop$code, 3, 4))
+tbl.pop$code <- NULL
+tbl.pop$type <- "population"
+tbl.pop$ratio <- tbl.pop$count / sum(tbl.pop$count)
+
+tbl <- rbind(tbl.elus, tbl.pop)
+tbl$type <- factor(tbl$type)
+
+cols <- c("élus" = "blue", "population" = "red")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(tranche.age, sexe, fill = type, width = ratio * 4, height = ratio * 4)) +
+    geom_tile(alpha = .5) +
+    xlab("Age") +
+    ylab("Sexe") +
+    ggtitle("Représentation par âge, sexe") +
+    scale_fill_manual("", values = cols) +
+    databzhTheme(),
+    ypos = "bottom"
+  )
+)
+
+#databzhSavePlot(ggp, "publish/11-cmp_age_sexe.png")
+```
+
+Chaque rectangle a une surface proportionnelle à sa représentation par rapport au total de sa catégorie (élus, population). 2 surfaces similaires signifient un ratio de représentation similaire.
+
+Ce qui donne en chiffres :
+
+```{r CmpAgeSummaryNumbers, echo = F}
+xtbl <- xtabs(ratio * 100 ~ tranche.age + type, data = aggregate(ratio ~ tranche.age + type, data = tbl, sum))
+xtbl <- round(xtbl[2:5,], 2)
+xtbl
+
+#writeLines(commonmark::markdown_html(as.character(knitr::kable(xtbl)), extensions = "table"), "publish/12-cmp_age_summary.html")
+```
+
+Exemple de lecture : **`r xtbl["45-59", "élus"]`%** des élus sont dans la tranche d'âge 45-59 ans, contre **`r xtbl["45-59", "population"]`%** pour la population.
+
+```{r CmpCSPSexe, echo = F}
+tbl.elus <- aggregate(nom ~ csp + sexe, data = elus35, length)
+names(tbl.elus)[3] <- "count"
+tbl.elus$type <- "élus"
+tbl.elus$ratio <- tbl.elus$count / sum(tbl.elus$count)
+
+tbl.pop <- recens35.csp
+names(tbl.pop)[2] <- "csp"
+tbl.pop$type <- "population"
+tbl.pop$ratio <- tbl.pop$count / sum(tbl.pop$count)
+
+tbl <- rbind(tbl.elus, tbl.pop)
+tbl$type <- factor(tbl$type)
+
+cols <- c("élus" = "blue", "population" = "red")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(csp, sexe, fill = type, width = ratio * 4, height = ratio * 4)) +
+    geom_tile(alpha = .5) +
+    xlab("CSP") +
+    ylab("Sexe") +
+    ggtitle("Représentation par catégorie socio-professionnelle, sexe") +
+    scale_fill_manual("", values = cols) +
+    databzhTheme(),
+    ypos = "bottom"
+  )
+)
+
+#databzhSavePlot(ggp, "publish/13-elus_summary.png")
+```
+
+Ce qui donne en chiffres :
+
+```{r CmpCSPSummaryNumbers, echo = F}
+xtbl <- xtabs(ratio * 100 ~ csp + type, data = aggregate(ratio ~ csp + type, data = tbl, sum))
+xtbl <- round(xtbl, 2)
+xtbl
+
+#writeLines(commonmark::markdown_html(as.character(knitr::kable(xtbl)), extensions = "table"), "publish/14-cmp_csp_summary.html")
+```
+
+Exemple de lecture : **`r xtbl["cs3", "élus"]`%** des élus ont une profession de cadre ou intellectuelle supérieure, contre **`r xtbl["cs3", "population"]`%** pour la population.
+
+## Conclusion
+
+Cette étude nous a permis d'en savoir un peu plus sur nos conseillers départementaux en ce qui concerne leur âge, sexe et catégorie socio-professionnelle, ainsi que sur l'exercice exclusif ou pas de leur mandat.
+
+Les chiffres étudiés nous montrent une disparité flagrante entre les élus et leurs administrés.
+
+Nous laisserons à nos lecteurs le soin de se faire leur propre avis quant à l'impact de ces éléments sur la capacité de nos élus à bien nous représenter.
+
+Les logiciels et technologies suivantes ont été utilisés dans la rédaction de cet article :
+
+- [RStudio](https://www.rstudio.com).
+- [R](https://cran.r-project.org).
+- [Visual Studio Code](https://code.visualstudio.com).
+- [.Net Core](https://dotnet.github.io).
+- [Firefox](https://www.mozilla.org/en-US/firefox/new/)
+
+Le code **C#** utilisé pour la Data Scraping du site du [département Ille et Vilaine](http://www.illeetvilaine.fr/fr/elus) est disponible [ici](https://github.com/michelcaradec/ElusScraping).
+
+Le code **R** utilisé pour déterminer le sexe d'une personne à partir de son prénom est disponible [ici](https://github.com/michelcaradec/gendeR).
+
+Le code **R** utilisé pour la rédaction de cet article est disponible sur notre dépôt de sources [Github](https://github.com/DataBzh/territoire).
