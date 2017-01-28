@@ -1,0 +1,330 @@
+---
+title: "Les entreprises en Bretagne administrative"
+output: html_notebook
+---
+
+```{r Setup, echo = F}
+source("../DataBzhTools/main.R")
+load(file = "data/sirene_bzh_2017.RData")
+load(file = "data/naf.RData")
+```
+
+Dans ce billet, nous allons nous intéresser aux entreprises en Bretagne administrative.
+
+## Données
+
+La [loi pour une République numérique](https://www.legifrance.gouv.fr/eli/loi/2016/10/7/ECFI1524250L/jo/texte) a entraîné une ouverture des données publiques. A cette occasion, les informations sur les entreprises et leurs établissements (aussi appelée **[base Sirene](http://www.sirene.fr/)**) sont [disponibles en Open Data](http://www.data.gouv.fr/fr/datasets/base-sirene-des-entreprises-et-de-leurs-etablissements-siren-siret/) depuis le 1er janvier 2017.  
+
+## Analyse exploratoire
+
+Le nombre d'établissements référencés en Bretagne administrative est de **`r prettyNum(nrow(sirene.bzh), " ")`**, pour un total de **`r prettyNum(length(unique(sirene.bzh$siren)), " ")`** entreprises (une entreprise pouvant avoir plusieurs établissements).
+
+Par rapport à la France, qui compte **`r prettyNum(etab.fr, " ")`** établissements (pour **`r prettyNum(ent.fr, " ")`** entreprises), les établissements bretons représentent **`r round(nrow(sirene.bzh) / etab.fr * 100, 2)`%** de la totalité du territoire.
+
+```{r EtablissementByDept, echo = F}
+tbl <- data.frame(table(sirene.bzh$depet))
+names(tbl) <- c("dept", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(dept, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Département") +
+    ylab("Quantité") +
+    ggtitle("Etablissements par département") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/01-etab_dept.png")
+```
+
+C'est en **Ille et Vilaine** que sont implantés le plus d'établissements, suivi du Finistère, du Morbihan et des Côtes d'Armor.
+
+```{r NafHistogram, echo = F}
+tbl <- data.frame(table(sirene.bzh$naf.niv1.et))
+names(tbl) <- c("naf", "count")
+tbl <- tbl[order(tbl$count, decreasing = T),]
+tbl$naf <- factor(tbl$naf, as.character(tbl$naf))
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(naf, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " "), angle = 45), size = 4, colour = "grey50") +
+    xlab("Activité") +
+    ylab("Quantité") +
+    ggtitle("Etablissements par activité") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/02-naf_histogram.png")
+```
+
+L'activité **`r tbl$naf[1]`** (**`r naf.niv1[naf.niv1$code == tbl$naf[1],]$libelle`**) est sans conteste la plus représentée en nombre d'établissements. Viennent ensuite les activités **`r naf.niv1[naf.niv1$code == tbl$naf[2],]$libelle`** et **`r naf.niv1[naf.niv1$code == tbl$naf[3],]$libelle`**.
+
+Le tableau suivant liste tous les codes d'activité.
+
+```{r CodesNaf, echo = F}
+naf.niv1
+
+#writeLines(commonmark::markdown_html(as.character(knitr::kable(naf.niv1)), extensions = "table"), "publish/03-naf_niv1_codes.html")
+```
+
+```{r NafByDept, echo = F}
+tbl <- aggregate(siren ~ depet + naf.niv1.et, data = sirene.bzh, length)
+names(tbl) <- c("dept", "naf.niv1", "count")
+
+naf.first.by.dept <- sapply(levels(tbl$dept), function(d) { tbl[tbl$dept == d,]$naf.niv1[order(tbl[tbl$dept == d,]$count, decreasing = T)][1] })
+naf.second.by.dept <- sapply(levels(tbl$dept), function(d) { tbl[tbl$dept == d,]$naf.niv1[order(tbl[tbl$dept == d,]$count, decreasing = T)][2] })
+
+same.first <- length(unique(naf.first.by.dept)) == 1
+same.second <- length(unique(naf.second.by.dept)) == 1
+```
+
+On retrouve la même activité en première position pour tous les départements. Les **Côtes d'Armor** se démarquent du reste de la région, avec en seconde position l'activité **`r naf.second.by.dept["22"]`** (**`r naf.niv1[naf.niv1$code == naf.second.by.dept["22"],]$libelle`**).
+
+```{r EtabByCategory, echo = F}
+tbl <- as.data.frame(table(sirene.bzh$categorie))
+names(tbl) <- c("cat", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(cat, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Catégorie") +
+    ylab("Quantité") +
+    ggtitle("Etablissements par catégorie") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/04-etab_by_cat.png")
+```
+
+Les **PMEs** sont représentées avec une majorité écrasante (**`r round(tbl[tbl$cat == "PME",]$count / sum(tbl$count) * 100, 2)`%** des établissements), et vient confirmer le fait qu'elles sont le [premier employeur de France](http://www.cpme.fr/indices/voir/503/les-pme-principaux-employeurs-de-france), tout comme en Bretagne, comme le montre le graphique ci-dessous, qui comptabilise l'effectif par catégorie.
+
+```{r EffectifByCat , echo = F}
+tbl <- aggregate(tefet.count ~ categorie, data = sirene.bzh, sum)
+names(tbl) <- c("categorie", "count")
+tbl$count <- round(tbl$count)
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(categorie, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Catégorie") +
+    ylab("Quantité") +
+    ggtitle("Effectif par catégorie") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/05-effectif_by_cat.png")
+```
+
+++Notes d'implémentation++
+
+Le calcul de l'effectif n'est qu'une estimation, sur la base de ce qui est déclaré par les établissements (la dernière actualisation n'étant pas toujours récente), et en moyennisant les tranches d'effectif communiquées par l'INSEE (par exemple, la tranche 100-199 comptera pour un effectif de 149 personnes).
+
+Concernant les catégories des établissements, selon la [définition de l'INSEE](http://www.sirene.fr/sirene/public/static/contenu-fichiers) :
+
+> - Une Petite ou Moyenne Entreprise (PME) emploie moins de 250 salariés, avec un chiffre d'affaires annuel inférieur à 50 millions d'euros ou un total de bilan n'excédant pas 43 millions d'euros. Cette catégorie inclut les microentreprises.
+> - Une Entreprise de Taille Intermédiaire (ETI) emploie entre 250 et 4999 salariés, avec un chiffre d'affaires n'excédant pas 1,5 milliards d'euros soit un total de bilan n'excédant pas 2 milliards d'euros.
+> - Une Grande Entreprise (GE) emploie au moins 5000 salariés.
+
+Cas particuliers :
+
+> - Une entreprise qui a moins de 250 salariés, mais plus de 50 millions d'euros de chiffre d'affaires et plus de 43 millions d'euros de total de bilan est aussi considérée comme une ETI.
+> - Une entreprise qui a moins de 5000 salariés mais plus de 1,5 milliards d'euros de chiffre d'affaires et plus de 2 milliards d'euros de total de bilan est aussi considérée comme une grande entreprise.
+
+Dans le cas de la base Sirene, la variable **catégorie** n'est pas obligatoirement renseignée (ce qui est souvent le cas pour les PMEs). Une détection automatique a été effectuée avec de déterminer les valeurs manquantes, sur la base de l'effectif (les informations concernant le chiffre d'affaires n'étant pas présentes dans la base Sirene).
+
+Poursuivons avec l'implantation par département des Grandes Entreprises.
+
+```{r GEByDept, echo = F}
+tbl <- as.data.frame(table(sirene.bzh[sirene.bzh$categorie == "GE", ]$depet))
+names(tbl) <- c("dept", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(dept, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Département") +
+    ylab("Quantité") +
+    ggtitle("Etablissements des grandes entreprises par département") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/06-ge_by_dept.png")
+```
+
+C'est l'**Ille et Vilaine** qui l'emporte, avec **`r round(tbl[tbl$dept == "35",]$count / sum(tbl$count) * 100, 2)`%** des établissements de catégorie **GE**.
+
+Considérons les établissements non pas en fonction de leur catégorie, mais de leur effectif (même s'il existe un lien entre les deux, qui peut éventuellement être altéré par le chiffre d'affaires, comme nous l'avons précédemment évoqué).
+
+```{r EffectifHist, echo = F}
+tbl <- as.data.frame(table(sirene.bzh$tefet))
+names(tbl) <- c("effectif", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(effectif, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 4, colour = "grey50") +
+    xlab("Effectif") +
+    ylab("Quantité") +
+    ggtitle("Etablissements par tranche d'effectif") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/07-effectif_hist.png")
+```
+
+Les établissements sans salariés (c'est à dire uniquement constitué de gérants) dominent largement (**`r round(tbl[tbl$effectif == "0",]$count / sum(tbl$count) * 100, 2)`%**). Il s'agit essentiellement de **PMEs**, comme nous le confirme ce tableau comptabilisant le nombre d'établissements par catégorie et tranche d'effectif.
+
+```{r EffectifByCatNumbers, echo = F}
+tbl <- as.data.frame(table(sirene.bzh$tefet, sirene.bzh$categorie))
+names(tbl) <- c("effectif", "categorie", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(categorie, effectif)) +
+    geom_tile(aes(fill = tbl$count)) +
+    geom_text(aes(label = ifelse(tbl$count == 0, "", prettyNum(tbl$count, " "))), size = 5) +
+    xlab("Catégorie") +
+    ylab("Effectif") +
+    ggtitle("Etablissements par tranche d'effectif et catégorie") +
+    scale_fill_gradient(low = "white", high = databzh$colour) +
+    databzhTheme() +
+    theme(legend.position = "none"),
+    xpos = "left",
+    ypos = "top"
+  )
+)
+
+#databzhSavePlot(ggp, "publish/08-effectif_by_cat_heatmap.png")
+```
+
+Afin de mieux comparer les autres établissements, excluons les établissements sans salariés de notre jeu de données.
+
+```{r EffectifNoZeroHist, echo = F}
+tbl <- as.data.frame(table(sirene.bzh$tefet))
+names(tbl) <- c("effectif", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl[tbl$effectif != "0",], aes(effectif, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 4, colour = "grey50") +
+    xlab("Effectif") +
+    ylab("Quantité") +
+    ggtitle("Etablissements par tranche d'effectif (au - 1 salarié)") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/09-effectif_no_zero_hist.png")
+```
+
+```{r Etab5000, echo = F}
+et5000 <- sirene.bzh[sirene.bzh$tefet == "5 000-9 999",]
+```
+
+Il y a **`r nrow(et5000)`** établissements de **plus de 5 000 salariés**. Il s'agit de :
+
+- **Centre Hospitalier Régional et Universitaire de Brest** (effectif déclaré en **`r et5000[et5000$siren == "200023059",]$defet`** = **`r prettyNum(et5000[et5000$siren == "200023059",]$efetcent, " ")`**).
+- **Centre Hospitalier Universitaire de Pontchaillou **(effectif déclaré en **`r et5000[et5000$siren == "263500076",]$defet`** = **`r prettyNum(et5000[et5000$siren == "263500076",]$efetcent, " ")`**).
+- **Automobiles Citroën** (effectif déclaré en **`r et5000[et5000$siren == "642050199",]$defet`** = **`r prettyNum(et5000[et5000$siren == "642050199",]$efetcent, " ")`**).
+
+++Remarques++
+
+- L’effectif est donné à la centaine prêt.
+- On peut s'interroger sur la pertinence de l'effectif de Citroën, dont la dernière mise à jour remonte à **1998**.
+
+Où se trouvent les établissements de 200 salariés et plus ?
+
+```{r Etab200ByDept, echo = F}
+et200plus <- sirene.bzh[sirene.bzh$tefet %in% c("200-249", "250-499", "500-999", "1 000-1 999", "2 000-4 999", "5 000-9 999", "10 000+"),]
+
+tbl <- as.data.frame(table(et200plus$depet))
+names(tbl) <- c("dept", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(dept, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Département") +
+    ylab("Quantité") +
+    ggtitle("Etablissements de 200 salariés et plus par département") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/10-effectif200_by_dept.png")
+```
+
+Les établissements de **200 salariés et plus** sont au nombre de **`r prettyNum(nrow(et200plus), " ")`** (**`r round(nrow(et200plus) / nrow(sirene.bzh) * 100, 2)`%** de la totalité).
+
+Les entreprise avec le plus d'établissements sont :
+
+```{r EtabByEnt, echo = F}
+library(sqldf)
+ent.agg <- sqldf("select siren, count(*) as count from 'sirene.bzh' group by siren order by count(*) desc")
+
+#head(ent.agg, 10)
+```
+
+| SIREN | Dénomination | Etablissements |
+|-------|--------------|----------------|
+| 356 000 000 | La Poste | 596 |
+| 775 577 018 | Crédit Mutuel Arkea | 451 |
+| 392 640 090 | Caisse d'épargne et de prévoyance Bretagne - Pays de Loire | 203 |
+| 775 576 986 | Triskalia | 194 |
+| 445 330 236 | Distrivert | 188 |
+| 814 844 346 | Newco | 154 |
+| 552 081 317 | Electricité de France | 149 |
+| 213 502 388 | Commune de Rennes | 145 |
+| 778 134 601 | Caisse régionales de crédit agricole mutuel du Finistère | 141 |
+| 334 159 472 | Ansamble | 130 |
+
+Terminons cette exploration par une cartographie.
+
+```{r EtabMap, echo = F}
+library(ggmap)
+
+et.geo <- sqldf("select lon, lat, count(*) as count from 'sirene.bzh' group by lon, lat")
+names(et.geo) <- c("lon", "lat", "Quantité")
+
+map_bzh <- qmap(
+  #location = "Bretagne",
+  location = c(
+    -5.262451171875001,
+    46.89023157359399,
+    0.39550781250000006,
+    49.61426925505115
+  ),
+  zoom = 7,
+  maptype = "terrain",
+  color = "bw"
+)
+
+(ggp <- map_bzh +
+  geom_point(
+    data = et.geo,
+    aes(x = lon, y = lat, size = Quantité),
+    colour = databzh$colour,
+    alpha = .5
+  ) +
+  ggtitle("Emplacement des établissements") +
+  databzhTheme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+)
+
+#databzhSavePlot(ggp, "publish/11-etab_map.png")
+```
+
+## Conclusion
+
+Cette étude n'est qu'un exemple de ce qu'il est possible de réaliser à partir de la **[base Sirene](http://www.sirene.fr/)**. De nombreuses possibilités sont offertes de par la richesse de celle-ci (une **centaine** de variables descriptives sont disponibles). On pourra par exemple aller plus loin en enrichissant ces données avec des informations de géolocalisation (en s'appuyant sur la [base adresse nationale](http://adresse.data.gouv.fr/)) ou financières (données [InfoGreffe](https://datainfogreffe.fr/)).
+
+++Notes d'implémentation++
+
+- La taille du fichier de stock **Sirene** (contenant les informations initiales) de **8.5 Go** rend difficile son exploitation avec les outils d'analyse de données traditionnels, comme un tableur ou **[R](https://cran.r-project.org)**, qui requièrent un chargement des données en mémoire. Afin de réduire cette taille, seules les données clés ont été conservées (par exemple, l'intitulé du code activité a été supprimé, car pouvant être retrouvé via une table de correspondance à partir du code), permettant ainsi de réduire la taille à **2 Go**. L'utilitaire **Python** développé pour cette opération est disponible [ici](https://github.com/michelcaradec/projector).
+- Les besoins de géolocalisation étant élémentaires (sans nécessité d'une grande précision), un utilitaire **R** a été développé afin d'obtenir des coordonnées longitude/latitude à partir d'un code postal. Le code est disponible [ici](https://github.com/michelcaradec/Rgeo).
+- Le code **R** utilisé pour la rédaction de cet article est disponible sur notre dépôt de sources [Github](https://github.com/DataBzh/territoire/).
