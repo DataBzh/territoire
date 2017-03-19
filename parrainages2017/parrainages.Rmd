@@ -1,0 +1,371 @@
+---
+title: "Parrainages aux élections présidentielles de 2017"
+params:
+  publish: FALSE
+output:
+  html_document: default
+  html_notebook: default
+---
+
+```{r Setup, echo = F}
+source("../DataBzhTools/main.R")
+load(file = "data/parrainages.RData")
+load(file = "data/parrainages_bzh.RData")
+```
+
+Dans ce billet, nous allons nous intéresser aux **parrainages** délivrés par les élus de **Bretagne administrative** aux candidats à l'**élection présidentielle de 2017**.
+
+Un candidat, afin de pouvoir solliciter les suffrages de ses concitoyens, doit avoir obtenu 500 signatures au **18 mars 2017**. Celles-ci doivent-être validées par le **Conseil Constitutionnel** (qui est chargé de veiller à la régularité de l’élection présidentielle), qui publiera la liste officielle des candidats le **21 mars 2017**.
+
+Un élu ne peut parrainer qu'[un seul candidat](https://presidentielle2017.conseil-constitutionnel.fr/tout-savoir/parrainages/elu-parrainer-plus-dun-candidat/), et ne peut annuler sa présentation (autre nom pour parrainage).
+
+Toutes les informations concernant les [candidats](https://presidentielle2017.conseil-constitutionnel.fr/tout-savoir/candidatures/) et les [parrains](https://presidentielle2017.conseil-constitutionnel.fr/tout-savoir/parrainages/qui-peut-parrainer-un-candidat/) sont disponibles sur le site du Conseil Constitutionnel, ainsi que sur la [fiche Wikipedia](https://fr.wikipedia.org/wiki/Pr%C3%A9sentation_des_candidats_%C3%A0_l%27%C3%A9lection_pr%C3%A9sidentielle_fran%C3%A7aise).
+
+Le premier tour de l'élection aura lieu le **23 avril 2017**, le second le **7 mai 2017**.
+
+## Données
+
+Pour la première fois dans une élection présidentielle, les données des parrainages sont accessibles en Open Data sur le [site](http://presidentielle2017.conseil-constitutionnel.fr) du Conseil Constitutionnel.
+
+Même si certains candidats se sont retirés de la course avant la date butoir, ou n'ont pas obtenu les 500 signatures requises, nous avons décidé de les conserver dans notre jeu de données, afin d'avoir l'exhaustivité des parrainages attribués par les élus.
+
+## Analyse exploratoire
+
+Le nombre de parrainages attribués en Bretagne administrative est de **`r nrow(gf.bzh)`** pour un total de **`r nrow(gf)`** (soit **`r round(nrow(gf.bzh) / nrow(gf) * 100, 2)`%**).
+
+Le nombre total de candidats est de **`r length(unique(gf$candidat))`**, mais seulement **`r length(unique(gf.bzh$candidat))`** ont été parrainés en Bretagne.
+
+Liste des candidats parrainés en Bretagne :
+
+```{r candidats.bzh, echo = F}
+cand.bzh <- unique(gf.bzh$candidat2)
+
+if (params$publish) {
+  writeLines(
+    commonmark::markdown_html(
+      as.character(
+        knitr::kable(
+          data.frame(candidat = cand.bzh[order(cand.bzh)])
+        )
+      ),
+      extensions = "table"
+    ),
+    "publish/01-cand_bzh.html"
+  )
+}
+```
+
+Liste des candidats parrainés dans le reste de la France, mais pas en Bretagne :
+
+```{r candidats.fr.not.bzh.not, echo = F}
+gf.fr.only <- gf[!(row.names(gf) %in% row.names(gf.bzh)),]
+cand.fr.only <- setdiff(unique(gf.fr.only$candidat2), unique(gf.bzh$candidat2))
+
+if (params$publish) {
+  writeLines(
+    commonmark::markdown_html(
+      as.character(
+        knitr::kable(
+          data.frame(candidat = cand.fr.only[order(cand.fr.only)])
+        )
+      ),
+      extensions = "table"
+    ),
+    "publish/02-cand_fr_only.html"
+  )
+}
+```
+
+Liste des candidats parrainés en Bretagne, mais pas dans le reste de la France :
+
+```{r candidats.bzh.not.fr, echo = F}
+cand.bzh.only <- setdiff(unique(gf.bzh$candidat2), unique(gf.fr.only$candidat2))
+
+if (params$publish) {
+  writeLines(
+    commonmark::markdown_html(
+      as.character(
+        knitr::kable(
+          data.frame(candidat = cand.bzh.only[order(cand.bzh.only)])
+        )
+      ),
+      extensions = "table"
+    ),
+    "publish/03-cand_bzh_only.html"
+  )
+}
+```
+
+Commençons par la répartition des parrainages par département.
+
+```{r dept, echo = F}
+tbl <- as.data.frame(table(gf.bzh$dept_coll))
+names(tbl) <- c("dept", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(dept, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Département") +
+    ylab("Parrainages") +
+    ggtitle("Parrainages par département") +
+    databzhTheme()
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/04-dept.png")
+}
+```
+
+C'est dans le département **`r tbl[order(tbl$count, decreasing = T)[1],]$dept`** que le plus grand nombre de parrainages a été attribué.
+
+Continuons avec la répartition des parrainages par candidat.
+
+```{r distrib.candidat, echo = F}
+tbl <- aggregate(nom ~ candidat + candidat.nom, data = gf.bzh, length)
+names(tbl) <- c("candidat.long", "candidat", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(candidat, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    scale_x_discrete(limits = tbl[order(tbl$count, decreasing = T),]$candidat) +
+    xlab("Candidat") +
+    ylab("Parrainages") +
+    ggtitle("Parrainages par candidat") +
+    databzhTheme() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/05-dist_cand.png")
+}
+```
+
+Le candidat ayant reçu le plus grand nombre de parrainages est **`r tbl[order(tbl$count, decreasing = T)[1],]$candidat.long`**.
+
+Combinons ces deux informations afin de visualiser la répartition par candidat et département.
+
+```{r distrib.candidat.dept, echo = F}
+tbl <- aggregate(nom ~ candidat.nom + dept_coll, data = gf.bzh, length)
+names(tbl) <- c("candidat", "dept", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(candidat, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 5, colour = "grey50") +
+    xlab("Candidat") +
+    ylab("Parrainages") +
+    ggtitle("Parrainages par candidat et département") +
+    databzhTheme() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  ) +
+  facet_grid(dept ~ .)
+)
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/06-dist_cand.dept.png")
+}
+```
+
+Visualisons différemment cette distribution des parrainages avec une carte de chaleur.
+
+```{r heat.candidat.dept, echo = F}
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(candidat, dept)) +
+    geom_tile(aes(fill = tbl$count)) +
+    geom_text(aes(label = ifelse(tbl$count == 0, "", prettyNum(tbl$count, " "))), size = 5) +
+    xlab("Candidat") +
+    ylab("Département") +
+    ggtitle("Parrainages par candidat et département") +
+    scale_fill_gradient(low = "white", high = databzh$colour) +
+    databzhTheme() +
+    theme(legend.position = "none") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)),
+    xpos = "left",
+    ypos = "top", size = 1
+  )
+)
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/07-heatmap_cand.dept.png")
+}
+```
+
+Une autre façon de mettre en évidence les attributions de parrainages par département est d'utiliser une **visualisation circulaire**, que l'on retrouve généralement pour restituer des flux entre une source (ici le département de l'élu) et une destination (ici le candidat). L'épaisseur du flux (lien entre le département et le candidat) est proportionnelle au nombre d'évènements (ici le nombre de parrainages attribués).
+
+```{r circle.prepare, echo = F}
+library(reshape2)
+# Nombre de parrainages par candidat
+gf.bzh.gpby <- as.data.frame(table(gf.bzh$candidat.nom))
+names(gf.bzh.gpby) <- c("candidat", "count")
+
+# Nom complet si plus de 10 parrainages, initiales sinon
+gf.bzh.circ <- data.frame(
+  candidat = ifelse(gf.bzh.gpby[gf.bzh$candidat.nom,]$count > 10, as.character(gf.bzh$candidat.nom), as.character(gf.bzh$candidat.initiales)),
+  candidat.nom = gf.bzh$candidat.nom,
+  dept_coll = gf.bzh$dept_coll
+)
+
+# Matrice de contigence
+tbl <- suppressMessages(
+  acast(
+    data = gf.bzh.circ,
+    formula = candidat ~ dept_coll
+  )
+)
+
+threshold <- 15
+tbl.high <- tbl[rowSums(tbl) >= threshold,]
+tbl.low <- tbl[rowSums(tbl) < threshold,]
+```
+
+Afin de rendre le résultat plus lisible, les candidats ont été séparés en deux groupes :
+
+- Ceux ayant reçus **au moins `r threshold`** parrainages.
+- Ceux ayant reçus **moins de `r threshold`** parrainages.
+
+Candidats ayant reçus **au moins `r threshold`** parrainages :
+
+```{r circle.candidat.dept.high, echo = F}
+library(circlize)
+
+dept.col <- databzh$colours[1:length(levels(gf.bzh$dept_coll)) + 1]
+
+chordDiagram(
+  tbl.high,
+  directional = -1,
+  direction.type = "arrows",
+  link.arr.type = "triangle",
+  link.arr.length = .1,
+  column.col = dept.col,
+  # Grille avec la même couleur que le flux pour les départements
+  # Couleur standard pour les candidats
+  grid.col = c(rep(databzh$colour, nrow(tbl.high)), dept.col)
+)
+
+## Matrice de connexion, sans regroupement des intersections.
+# chordDiagram(gf.bzh[, c("candidat.nom", "dept_coll")])
+## Matrice de connexion, sans les poids.
+# chordDiagram(adjacencyList2Matrix(gf.bzh[, c("candidat.nom", "dept_coll")]))
+
+if (params$publish) {
+  #svg("publish/08-circle_cand.dept.high.svg")
+  #dev.off()
+}
+```
+
+Il n'est pas surprenant de constater que **Benoît HAMON** reçoit le plus de parrainages du **Finistère**, celui-ci ayant un ancrage politique fort dans ce département.
+
+Candidats ayant reçus **moins de `r threshold`** parrainages :
+
+```{r circle.candidat.dept.low, echo = F}
+chordDiagram(
+  tbl.low,
+  directional = -1,
+  direction.type = "arrows",
+  link.arr.type = "triangle",
+  link.arr.length = .1,
+  column.col = dept.col,
+  # Grille avec la même couleur que le flux pour les départements
+  # Couleur standard pour les candidats
+  grid.col = c(rep(databzh$colour, nrow(tbl.low)), dept.col)
+)
+
+if (params$publish) {
+  #svg("publish/09-circle_cand.dept.low.svg")
+  #dev.off()
+}
+```
+
+Limitons-nous enfin aux seuls candidats ayant obtenus les **500 signatures** :
+
+```{r circle.candidat.dept.500, echo = F}
+tbl.fr <- as.data.frame(table(gf$candidat.nom))
+names(tbl.fr) <- c("candidat", "count")
+tbl.fr.500 <- tbl.fr[tbl.fr$count >= 500,]
+
+tbl.500 <- suppressMessages(
+  acast(
+    data = gf.bzh.circ[gf.bzh.circ$candidat.nom %in% tbl.fr.500$candidat, c("candidat", "dept_coll")],
+    formula = candidat ~ dept_coll
+  )
+)
+
+chordDiagram(
+  tbl.500,
+  directional = -1,
+  direction.type = "arrows",
+  link.arr.type = "triangle",
+  link.arr.length = .1,
+  column.col = dept.col,
+  # Grille avec la même couleur que le flux pour les départements
+  # Couleur standard pour les candidats
+  grid.col = c(rep(databzh$colour, nrow(tbl.500)), dept.col)
+)
+
+if (params$publish) {
+  #svg("publish/10-circle_cand.dept.500.svg")
+  #dev.off()
+}
+```
+
+Intéressons-nous maintenant aux **parrains**, en commençant par regarder qui parraine en fonction du mandat.
+
+```{r mandat, echo = F}
+tbl <- as.data.frame(table(gf.bzh$mandat))
+names(tbl) <- c("mandat", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(mandat, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Mandat") +
+    ylab("Parrainages") +
+    ggtitle("Parrainages par mandat") +
+    databzhTheme()
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/11-mandat.png")
+}
+```
+
+Ce sont essentiellement les **maires** qui délivrent leurs parrainages. Viennent ensuite les **conseillers départementaux** (dont nous avions déjà parlé dans un [précédent article](http://data-bzh.fr/elus-conseil-departemental-dille-vilaine/)).
+
+On observe cette tendance quelque soit le département.
+
+```{r mandat_dept, echo = F}
+tbl <- aggregate(nom ~ mandat + dept_coll, data = gf.bzh, length)
+names(tbl) <- c("mandat", "dept", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(mandat, dept)) +
+    geom_tile(aes(fill = tbl$count)) +
+    geom_text(aes(label = ifelse(tbl$count == 0, "", prettyNum(tbl$count, " "))), size = 5) +
+    xlab("Mandat") +
+    ylab("Département") +
+    ggtitle("Parrainages par mandat et département") +
+    scale_fill_gradient(low = "white", high = databzh$colour) +
+    databzhTheme() +
+    theme(legend.position = "none")
+  )
+)
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/12-heatmap_mandat.dept.png")
+}
+```
+
+## Conclusion
+
+Nous aurions aimé aller plus loin dans notre exploration, en étudiant par exemple :
+
+- Le niveau de corrélation entre la couleur politique des parrains et des candidats.
+- La localisation des parrains (mise en évidence d'éventuels ancrages locaux des candidats).
+
+Malheureusement, ces informations concernant les parrains ne sont pas présentes (couleur politique) ou sont incomplètes (localisation) dans le jeu de données proposé par le Conseil Constitutionnel.
+
+Les informations mises à disposition permettent néanmoins de se faire une idée sur la répartition des parrainages.
+
+Le code **R** utilisé pour la rédaction de cet article est disponible sur notre dépôt de sources [Github](https://github.com/DataBzh/territoire/tree/master/parrainages2017).
