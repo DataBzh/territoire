@@ -1,0 +1,194 @@
+---
+title: "Noms des entreprises en Bretagne administrative - Partie 2"
+params:
+  publish: FALSE
+output:
+  html_document: default
+  html_notebook: default
+---
+
+```{r Setup, echo = F}
+source("../DataBzhTools/main.R")
+load(file = "data/noms.RData")
+load(file = "data/letters-freq.RData")
+load(file = "data/naf.RData")
+```
+
+Ce billet fait suite à un [premier](http://data-bzh.fr/noms-entreprises-bretagne-administrative-partie-1/), dans lequel nous avions commencé à nous intéresser aux noms des entreprises en Bretagne administrative, en travaillant notamment sur les mots.
+
+Nous allons poursuivre dans cette seconde partie en travaillant cette fois sur les **lettres**.
+
+## Données
+
+Les informations sur les entreprises et leurs établissements proviennent de la [base Sirene](http://www.sirene.fr/), [disponible en Open Data](http://www.data.gouv.fr/fr/datasets/base-sirene-des-entreprises-et-de-leurs-etablissements-siren-siret/) sur le site [data.gouv.fr](http://www.data.gouv.fr/).
+
+Les entreprises répertoriées dans ce jeu de données peuvent-être classées en 2 catégories :
+
+1. Les entreprises.
+2. Les entrepreneurs individuels.
+
+Tout comme dans la [première partie](http://data-bzh.fr/noms-entreprises-bretagne-administrative-partie-1/) de cette série, nous ne prendrons en compte que les **entreprises**.
+
+Précisons que la base **Sirene** recense le **nom d'exploitation** de la société ainsi que le **nom de l'enseigne**, qui peuvent parfois être différents. C'est le **nom d'exploitation** que nous utiliserons ici.
+
+## Analyse exploratoire
+
+[Rappelons](http://data-bzh.fr/entreprises-bretagne-administrative/) pour commencer que le nombre d’établissements référencés en Bretagne administrative est de **`r prettyNum(nrow(noms.bzh), " ")`**.
+
+Commençons par l'utilisation des lettres de l'alphabet, en comptabilisant le nombre d’occurrences pour chaque lettre.
+
+```{r letter_count, echo = F}
+library(scales)
+
+lc0.bzh.ordered <- lc0.bzh[order(lc0.bzh$count, decreasing = T),]
+
+(ggp <- databzhPlot(
+  ggplot(data = lc0.bzh, aes(letter, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " "), angle = 45), size = 4, colour = "grey50") +
+    xlab("Lettre") +
+    ylab("Quantité") +
+    scale_x_discrete(limits = lc0.bzh.ordered$letter) +
+    scale_y_continuous(labels = comma) +
+    ggtitle("Fréquence d'utilisation par lettre", "(Nom des entreprises)") +
+    databzhTheme() +
+    theme(plot.subtitle = element_text(hjust = .5))
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/01-letter_count.png")
+}
+```
+
+C'est sans réelle surprise la lettre **`r lc0.bzh.ordered[1,]$letter`** qui apparaît le plus souvent.
+
+Plus globalement, la fréquence d'apparition des lettres dans le nom des entreprises est-elle similaire à celle observée dans la langue française (qui est plus basée sur du contenu littéraire que sur des appellations) ?
+
+Comparons les deux fréquences d'utilisation :
+
+```{r letter_freq_prepare, echo=F}
+tbl.1 <- lc0.bzh
+tbl.1$type <- "Nom"
+
+tbl.2 <- letters.freq.az
+tbl.2$type <- "Français"
+
+tbl <- rbind(tbl.1, tbl.2)
+tbl$freq100 <- tbl$freq * 100
+tbl$type <- as.factor(tbl$type)
+```
+
+```{r letter_freq, echo=F}
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(letter, freq100)) +
+    geom_bar(aes(fill = type), stat = "identity", position = "dodge") +
+    scale_fill_manual(values = databzh$colours[c(1, 3)]) +
+    geom_text(aes(label = round(freq100, 2), angle = 45), size = 4, colour = "grey50") +
+    scale_y_continuous(breaks = seq(0, ceiling(max(tbl$freq100)), by = 1)) +
+    xlab("Lettre") +
+    ylab("Fréquence (%)") +
+    ggtitle("Fréquences d'utilisation par lettre", "(Nom des entreprises / Français)") +
+    databzhTheme() +
+    theme(plot.subtitle = element_text(hjust = .5))
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/02-letter_freq.png")
+}
+```
+
+Vous pouvez vous reporter à la [fiche Wikipedia](https://fr.wikipedia.org/wiki/Fréquence_d%27apparition_des_lettres_en_français) correspondante pour plus d'information sur la fréquence d'apparition des lettres en français.
+
+Les fréquences d'utilisation semblent relativement similaires. Essayons de valider statistiquement cette intuition.
+
+```{r letter_freq_verif_prepare, echo = F}
+tbl.diff <- data.frame(letter = tbl.1$letter, freq = abs(tbl.1$freq - tbl.2$freq))
+freq.diff.range <- range(tbl.diff$freq)
+freq.cor <- cor.test(tbl.1$freq, tbl.2$freq)
+```
+
+La différence de fréquence entre les deux catégories (noms d'entreprises, langue française) pour chaque lettre est comprise entre **`r round(freq.diff.range[1] * 100, 2)`%** et **`r round(freq.diff.range[2] * 100, 2)`%**, pour une moyenne de **`r round(mean(tbl.diff$freq) * 100, 2)`%**.
+
+```{r letter_freq_verif_boxplot, echo = F}
+(ggp <- databzhPlot(
+  ggplot(
+    data = tbl.diff,
+    aes("", freq * 100)
+  ) +
+    geom_boxplot(fill = databzh$colour) +
+    scale_y_continuous(breaks = seq(0, max(tbl.diff$freq * 100), by = .2)) +
+    xlab("") +
+    ylab("Ecart (%)") +
+    ggtitle("Ecart de fréquence d'utilisation des lettres") +
+    databzhTheme()
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/03-letter_freq_verif_boxplot.png")
+}
+```
+
+*Pour en savoir plus les boîtes à moustache, se reporter à la [fiche Wikipedia](https://fr.wikipedia.org/wiki/Boîte_à_moustaches)*.
+
+Le **coefficient de corrélation** entre les fréquences est de **`r round(freq.cor$estimate, 2)`** (avec un **interval de confiance** compris entre **`r round(freq.cor$conf.int[1], 2)`** et **`r round(freq.cor$conf.int[2], 2)`**, ce qui est considéré comme élevé (le maximum étant 1).
+
+Observons graphiquement cette corrélation en affichant pour chaque lettre une fréquence d'utilisation (noms sur l'axe des abscisses) par rapport à l'autre (langue française sur l'axe des ordonnées).
+
+```{r letter_freq_cor, echo = F}
+axis.max <- ceiling(max(tbl.1$freq, tbl.2$freq) * 100)
+
+(ggp <- databzhPlot(
+  ggplot() +
+    geom_point(aes(tbl.1$freq * 100, tbl.2$freq * 100), size = 9, alpha = .1) +
+    # + .1 pour centrer verticalement la lettre dans le cercle
+    geom_text(aes(tbl.1$freq * 100, tbl.2$freq * 100 + .1, label = tbl.1$letter), size = 6, alpha = .7) +
+    geom_abline(aes(colour = "grey50"), slope = 1, linetype = "dashed") +
+    scale_x_continuous(breaks = seq(0, axis.max, by = 1)) +
+    scale_y_continuous(breaks = seq(0, axis.max, by = 1)) +
+    xlab("Noms d'entreprises (%)") +
+    ylab("Langue française (%)") +
+    ggtitle("Corrélation de la fréquence d'utilisation par lettre") +
+    databzhTheme(),
+  ypos = "bottom"
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/04-letter_freq_cor.png")
+}
+```
+
+*Plus une lettre est proche de la ligne en pointillés (qui indique une corrélation parfaite), plus la corrélation est importante.*
+
+La représentation graphique vient confirmer la corrélation élevée (**`r round(freq.cor$estimate, 2)`**) qu'il y a dans l'usage des lettres de l'alphabet entre les noms d'entreprises et la langue française.
+
+Terminons avec quelques noms surprenants, dans la mesure où ceux-ci sont composés d'une seule et même lettre, répétée une ou plusieurs fois :
+
+```{r one_letter, echo = F}
+tbl <- noms.bzh.one.letter
+tbl$naf.niv1.lib <- naf.niv1[tbl$naf.niv1.et,]$libelle
+names(tbl) <- c("codpos", "depet", "enseigne", "civilite", "nom", "naf.niv.1", "activite")
+row.names(tbl) <- NULL
+tbl[, c("nom", "activite")]
+
+if (params$publish) {
+  writeLines(
+    commonmark::markdown_html(
+      as.character(
+        knitr::kable(
+          tbl[, c("nom", "activite")]
+        )
+      ),
+      extensions = "table"
+    ),
+    "publish/05-one_letter.html"
+  )
+}
+```
+
+## Conclusion
+
+On le constate, les noms des entreprises peuvent faire l'objet de nombreuses études, qu'elles soient informatives ou plus anecdotiques.
+
+Les idées et sujets d'exploration ne manquent donc pas, et seront, qui sait, peut-être un prétexte à un troisième billet sur le sujet...
+
+Le code **R** utilisé pour la rédaction de cet article ainsi que du [précédent](http://data-bzh.fr/noms-entreprises-bretagne-administrative-partie-1/) est disponible sur notre dépôt de sources [Github](https://github.com/DataBzh/territoire/tree/master/nomsentreprises).

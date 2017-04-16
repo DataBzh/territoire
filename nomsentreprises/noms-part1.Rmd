@@ -1,0 +1,220 @@
+---
+title: "Noms des entreprises en Bretagne administrative - Partie 1"
+output:
+  html_notebook: default
+  html_document: default
+---
+
+```{r Setup, echo = F}
+source("../DataBzhTools/main.R")
+load(file = "data/noms.RData")
+load(file = "../Sirene/data/naf.RData")
+noms.bzh.ent <- noms.bzh[noms.bzh$civilite == "",]
+```
+
+Dans un [précédent billet](http://data-bzh.fr/entreprises-bretagne-administrative/), nous nous étions intéressé aux entreprises en Bretagne administrative, sous l'angle de l'activité, de la catégorie ou encore de l'effectif.
+
+Nous allons nous cette fois-ci nous focaliser sur le nom des entreprises.
+
+## Données
+
+Les informations sur les entreprises et leurs établissements proviennent de la [base Sirene](http://www.sirene.fr/), [disponible en Open Data](http://www.data.gouv.fr/fr/datasets/base-sirene-des-entreprises-et-de-leurs-etablissements-siren-siret/) sur le site [data.gouv.fr](http://www.data.gouv.fr/).
+
+Les entreprises répertoriées dans ce jeu de données peuvent-être classées en 2 catégories :
+
+1. Les entreprises.
+2. Les entrepreneurs individuels.
+
+Nous ne traiterons ici que la première catégorie, celle des **entreprises**. La dénomination d'une entreprise individuelle pouvant essentiellement être constituée par le nom de la personne morale la possédant, cette étude porterait alors sur des patronymes plutôt que sur des noms communs.
+
+Précisons que la base **Sirene** recense le **nom d'exploitation** de la société ainsi que le **nom de l'enseigne**, qui peuvent parfois être différents. C'est le **nom d'exploitation** que nous utiliserons ici.
+
+## Analyse exploratoire
+
+Pour [mémoire](http://data-bzh.fr/entreprises-bretagne-administrative/), le nombre d’établissements référencés en Bretagne administrative est de **`r prettyNum(nrow(noms.bzh), " ")`**.
+
+```{r Civilite, echo = F}
+library(scales)
+
+civilite.bool <- noms.bzh$civilite == ""
+tbl <- as.data.frame(table(civilite.bool))
+names(tbl) <- c("type", "count")
+levels(tbl$type) <- c("entrepreneur individuel", "entreprise")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(type, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Type") +
+    ylab("Quantité") +
+    scale_y_continuous(labels = comma) +
+    ggtitle("Etablissements par type") +
+    databzhTheme(),
+  xpos = "left"
+))
+
+#databzhSavePlot(ggp, "publish/01-civilite.png")
+```
+
+Les entreprises non-individuelles, que nous étudierons ici, représentent **`r round(tbl[tbl$type == "entreprise",]$count / nrow(noms.bzh) * 100, 2)`%** de la totalité.
+
+```{r LengthHist, echo = F}
+noms.bzh.ent$len <- nchar(noms.bzh.ent$l_normalisee, type = "bytes") # type = "bytes" pour les caractères Unicode
+tbl <- as.data.frame(table(noms.bzh.ent$len))
+names(tbl) <- c("nbchar", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(nbchar, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " "), angle = 45), size = 4, colour = "grey50") +
+    geom_vline(xintercept = median(noms.bzh.ent$len), linetype = "dashed") +
+    xlab("Nombre de caractères") +
+    ylab("Quantité") +
+    ggtitle("Nombre de caractères par nom d'établissement") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/02-length_histogram.png")
+```
+
+Le nombre moyen de caractères du nom d'un établissement est de **`r round(mean(noms.bzh.ent$len))`** (nombre médian de **`r median(noms.bzh.ent$len)`**, représenté par la ligne en pointillés).
+
+Le nombre d'établissements diminue régulièrement à partir de **14** caractères, avec une distribution à **[coefficient de dissymétrie](https://en.wikipedia.org/wiki/Skewness) positif** (positive skew distribution). Une exception apparaît pour les noms composés de **38** caractères (**`r prettyNum(tbl[tbl$nbchar == 38,]$count, " ")`** occurrences). Aucun élément présent dans le jeu de données ne permet d'expliquer ce phénomène, probablement dû au simple fait du hasard.
+
+Mise à jour du 01/04/2017 :
+
+*Le pic de dénominations de 38 caractères a en fait une explication, qui nous a été donnée par un interlocuteur de l'INSEE (que nous remercions). Le champ de dénomination de la base Sirene était limité à 38 caractères jusque dans les années 1990 (il est ensuite passé à 120 caractères). Les gestionnaires faisaient donc en sorte de consigner cette dénomination sur 38 caractères, en abrégeant certains mots. On observe ainsi un arrêt de la décroissance du nombre de dénominations entre 35 et 37 caractères.*
+
+Passons au nombre de mots par nom d'établissement.
+
+```{r WordCountHist, echo = F}
+noms.bzh.ent$wc <- sapply(
+  strsplit(noms.bzh.ent$l_normalisee, split = " "),
+  FUN = function(x) { length(x) }
+)
+
+tbl <- as.data.frame(table(noms.bzh.ent$wc))
+names(tbl) <- c("words", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(words, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 8, colour = "grey50") +
+    xlab("Nombre mots") +
+    ylab("Quantité") +
+    ggtitle("Nombre de mots par nom d'établissement") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/03-wordcount_hist.png")
+```
+
+```{r WordCountQuantile, echo = F}
+qtl <- quantile(noms.bzh.ent$wc)
+```
+
+Visualisons la même information sous la forme d'une **[boite à moustaches](https://fr.wikipedia.org/wiki/Boîte_à_moustaches)**.
+
+```{r WordCountBoxPlot, echo = F}
+(ggp <- databzhPlot(
+  ggplot(
+    data = noms.bzh.ent,
+    aes("", wc)
+  ) +
+    geom_boxplot(fill = databzh$colour) +
+    #coord_flip() +
+    xlab("") +
+    ylab("Mots") +
+    scale_y_continuous(breaks = seq(0, max(noms.bzh.ent$wc), by = 1)) +
+    ggtitle("Nombre de mots par nom d'établissement") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/04-wordcount_boxplot.png")
+```
+
+**50%** des noms sont composés de **`r qtl[2]` à `r qtl[4]`** mots.
+
+Regardons quelle est la distribution du nombre de mots en fonction de l'**activité**.
+
+```{r WordCountNafBoxPlot, echo = F}
+(ggp <- databzhPlot(
+  ggplot(
+    data = noms.bzh.ent,
+    aes(naf.niv1.et, wc)
+  ) +
+    geom_boxplot(fill = databzh$colour) +
+    xlab("Activité") +
+    ylab("Mots") +
+    ggtitle("Nombre de mots par activité") +
+    databzhTheme(),
+  xpos = "left"
+))
+
+#databzhSavePlot(ggp, "publish/05-wordcount_naf.png")
+```
+
+Les établissements d'activité **E**, **O**, **P**, **Q** et **U** (respectivement **`r paste(naf.niv1[naf.niv1$code %in% c("E", "O", "P", "Q", "U"),]$libelle, collapse = " / ")`**) ont des noms avec un plus grand nombre de mots que pour les autres activités. Ceci s'explique notamment par le fait que le nom, en plus de la désignation de l'activité, peut contenir le lieu d'action (exemples : "Préfecture du département du Finistère", "Chambre commerce et industrie de Morlaix", "Dir interdep routes ouest cei de Brest", etc.).
+
+Le tableau suivant liste tous les codes d'activité.
+
+```{r CodesNaf, echo = F}
+naf.niv1
+
+#writeLines(commonmark::markdown_html(as.character(knitr::kable(naf.niv1)), extensions = "table"), "publish/06-naf_niv1_codes.html")
+```
+
+Travaillons maintenant sur les mots en eux-même.
+
+```{r WordCount, echo = F}
+wc <- read.delim("data/wc_civ0_bzh.tsv", header = F, stringsAsFactors = F, col.names = c("word", "count"))
+wc.top <- wc[head(order(wc$count, decreasing = T), 1000),] # 1000 mots les plus utilisés
+wc.top <- wc.top[nchar(wc.top$word) > 1,] # Mots de plus de 1 caractère
+wc.top.sci <- wc.top[-1,] # Mots sans "SCI"
+```
+
+```{r WordCountMostUsed, echo = F}
+wc.top20 <- head(wc.top, 20)
+
+(ggp <- databzhPlot(
+  ggplot(data = wc.top20, aes(word, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    scale_x_discrete(limits = wc.top20[order(wc.top20$count, decreasing = T),]$word) +
+    geom_text(aes(label = prettyNum(count, " ")), angle = 45, size = 4, colour = "grey50", ) +
+    xlab("Mot") +
+    ylab("Quantité") +
+    scale_y_continuous(labels = comma) +
+    ggtitle("20 mots les plus utilisés") +
+    databzhTheme()
+))
+
+#databzhSavePlot(ggp, "publish/07-wordcount.png")
+```
+
+Le nombre d’occurrences du mot **`r wc.top[1,]$word`** représente **`r round(wc.top[1,]$count / sum(wc$count) * 100, 2)`%** de la totalité, écrasant le reste de la distribution, avec **`r prettyNum(wc.top[1,]$count, " ")`** occurrences, qui descend à **`r prettyNum(wc.top[2,]$count, " ")`** pour le second mot **`r wc.top[2,]$word`**.
+
+La présence de ce mot vient confirmer le constat effectué dans notre [précédent article](http://data-bzh.fr/entreprises-bretagne-administrative/), dans lequel nous avions mis en évidence la forte représentation de l’activité **L** (**`r naf.niv1[naf.niv1$code == "L",]$libelle`**) en termes de nombre d’établissements.
+
+Terminons par un **[nuage de mots](https://fr.wikipedia.org/wiki/Nuage_de_mots-clés)**, dans lequel nous avons volontairement exclu le mot **`r wc.top[1,]$word`**, dont la présence aurait pour effet d'écraser les autres mots (la taille d'affichage étant proportionnelle au nombre d’occurrences).
+
+```{r WordCloud, echo = F}
+library(wordcloud)
+wordcloud(
+  wc.top.sci$word,
+  wc.top.sci$count,
+  max.words = 100,
+  rot.per = .2,
+  colors = databzh$colours[1:4],
+  scale = c(3, .5)
+)
+
+#png("publish/08-wordcloud.png", width = 1200, height = 600)
+#savePlot("publish/08-wordcloud.png")
+#dev.off()
+```
+
+## Conclusion
+
+Ainsi s'achève la première partie de notre série sur les noms des entreprises en Bretagne administrative.
+
+La suite dans un prochain article.
