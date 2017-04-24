@@ -17,15 +17,16 @@ sum(ca$NB_INSCRITS)
 
 b <- ville %>%
   gather(type, volume, c(14:18,85)) %>%
-  mutate(ratio = volume / 116084 * 100) %>%
+  mutate(ratio = volume / 117439 * 100) %>%
   mutate(type = factor(type, levels = c("NB_INSCRITS", "NB_EMARGEMENTS", 
                                         "NB_BULLETINS","NB_NULS","NB_EXPRIMES", 
-                                        "NB_BLANC"))) 
+                                        "NB_BLANC"))) %>%
+  mutate(pourc = paste0(round(ratio, 2), " %"))
 
 b %>%
   ggplot(aes(type, ratio)) + 
   geom_bar(stat = "identity", fill = databzh$colour1) + 
-  geom_label(aes(label = round(ratio,2)),size = 5) +
+  geom_label(aes(label = pourc),size = 5) +
   #coord_flip(expand = F) +
   labs(x = "", 
        y = "", 
@@ -64,7 +65,7 @@ ville %>%
 
 # Circonscription
 
-ggplot(ci, aes(NOM_CIRCONSCRIPTION, as.numeric(POURCENTAGE_PARTICIPATION))) +
+ggplot(ci, aes(NOM_CIRCONSCRIPTION, as.numeric(substr(ci$POURCENTAGE_PARTICIPATION, 1, 2)))) +
   geom_bar(stat = "identity", fill = databzh$colour2) + 
   ylim(0,100) +
   coord_flip() + 
@@ -116,7 +117,7 @@ ci %>%
 
 # Canton
 
-ggplot(ca, aes(NOM_CANTON, as.numeric(POURCENTAGE_PARTICIPATION))) +
+ggplot(ca, aes(NOM_CANTON, as.numeric(substr(POURCENTAGE_PARTICIPATION, 1, 2)))) +
   geom_bar(stat = "identity", fill = databzh$colour2) + 
   ylim(0,100) +
   coord_flip() + 
