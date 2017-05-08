@@ -83,78 +83,6 @@ reg_cand %>%
        caption = "http://data-bzh.fr") +
   databzhTheme()
 
-reg_type_ratio %>%
-  gather(key = Type, value = ratio, 2:7) %>%
-  group_by(`Libellé du département`, Type) %>%
-  summarise(ratio = round(mean(ratio),2)) %>%
-  mutate(Type = factor(Type, levels = c("Inscrits", "Abstentions", 
-                                        "Votants","Blancs","Nuls", 
-                                        "Exprimés"))) %>%
-  filter(`Libellé du département` == "Côtes-d'Armor") %>%
-  ggplot(aes(Type, ratio)) + 
-  geom_bar(stat = "identity", position = "dodge", fill = databzh$colour2) +
-  geom_label(aes(label = ratio),size = 5, fill = "#FFFFFF") +
-  labs(x = "", 
-       y = "", 
-       title = "Anatomie du second tour des présidentielles 2017 en Bretagne", 
-       subtitle = "Données via data.gouv",
-       caption = "http://data-bzh.fr") +
-  databzhTheme()
-
-reg_type_ratio %>%
-  gather(key = Type, value = ratio, 2:7) %>%
-  group_by(`Libellé du département`, Type) %>%
-  summarise(ratio = round(mean(ratio),2)) %>%
-  mutate(Type = factor(Type, levels = c("Inscrits", "Abstentions", 
-                                        "Votants","Blancs","Nuls", 
-                                        "Exprimés"))) %>%
-  filter(`Libellé du département` == "Finistère") %>%
-  ggplot(aes(Type, ratio)) + 
-  geom_bar(stat = "identity", position = "dodge", fill = databzh$colour3) +
-  geom_label(aes(label = ratio),size = 5, fill = "#FFFFFF") +
-  labs(x = "", 
-       y = "", 
-       title = "Anatomie du second tour des présidentielles 2017 en Bretagne", 
-       subtitle = "Données via data.gouv",
-       caption = "http://data-bzh.fr") +
-  databzhTheme()
-
-reg_type_ratio %>%
-  gather(key = Type, value = ratio, 2:7) %>%
-  group_by(`Libellé du département`, Type) %>%
-  summarise(ratio = round(mean(ratio),2)) %>%
-  mutate(Type = factor(Type, levels = c("Inscrits", "Abstentions", 
-                                        "Votants","Blancs","Nuls", 
-                                        "Exprimés"))) %>%
-  filter(`Libellé du département` == "Ille-et-Vilaine") %>%
-  ggplot(aes(Type, ratio)) + 
-  geom_bar(stat = "identity", position = "dodge", fill = databzh$colour4) +
-  geom_label(aes(label = ratio),size = 5, fill = "#FFFFFF") +
-  labs(x = "", 
-       y = "", 
-       title = "Anatomie du second tour des présidentielles 2017 en Bretagne", 
-       subtitle = "Données via data.gouv",
-       caption = "http://data-bzh.fr") +
-  databzhTheme()
-
-reg_type_ratio %>%
-  gather(key = Type, value = ratio, 2:7) %>%
-  group_by(`Libellé du département`, Type) %>%
-  summarise(ratio = round(mean(ratio),2)) %>%
-  mutate(Type = factor(Type, levels = c("Inscrits", "Abstentions", 
-                                        "Votants","Blancs","Nuls", 
-                                        "Exprimés"))) %>%
-  filter(`Libellé du département` == "Morbihan") %>%
-  ggplot(aes(Type, ratio)) + 
-  geom_bar(stat = "identity", position = "dodge", fill = databzh$colour5) +
-  geom_label(aes(label = ratio),size = 5, fill = "#FFFFFF") +
-  labs(x = "", 
-       y = "", 
-       title = "Anatomie du second tour des présidentielles 2017 en Bretagne", 
-       subtitle = "Données via data.gouv",
-       caption = "http://data-bzh.fr") +
-  databzhTheme()
-
 library(rgdal)
 roj <- readOGR(dsn=".", layer="R53_dep")
 wmap_df <- fortify(roj)
@@ -181,3 +109,77 @@ ggplot(wmap_df, aes(long,lat, group=group)) +
         axis.title.y=element_blank(),
         panel.grid.major= element_line("grey50", linetype = "dashed"), 
         panel.background= element_blank()) 
+
+
+reg_type_ratio %>%
+  gather(key = Type, value = ratio, 2:7) %>%
+  group_by(`Libellé du département`, Type) %>%
+  summarise(ratio = round(mean(ratio),2)) %>%
+  mutate(Type = factor(Type, levels = c("Inscrits", "Abstentions", 
+                                        "Votants","Blancs","Nuls", 
+                                        "Exprimés"))) %>%
+  filter(`Libellé du département` == "Côtes-d'Armor") %>%
+  ggplot(aes(Type, ratio)) + 
+  geom_bar(stat = "identity", position = "dodge", fill = databzh$colour2) +
+  geom_label(aes(label = ratio),size = 5, fill = "#FFFFFF") +
+  labs(x = "", 
+       y = "", 
+       title = "Anatomie du second tour des présidentielles 2017 dans les Côtes-d'Armor", 
+       subtitle = "Données via data.gouv",
+       caption = "http://data-bzh.fr") +
+  databzhTheme()
+
+reg_type_ratio %>%
+  gather(key = Type, value = ratio, 2:7) %>%
+  group_by(`Libellé du département`, Type) %>%
+  summarise(ratio = round(mean(ratio),2)) %>%
+  mutate(Type = factor(Type, levels = c("Inscrits", "Abstentions", 
+                                        "Votants","Blancs","Nuls", 
+                                        "Exprimés"))) %>%
+  filter(`Libellé du département` == "Finistère") %>%
+  ggplot(aes(Type, ratio)) + 
+  geom_bar(stat = "identity", position = "dodge", fill = databzh$colour3) +
+  geom_label(aes(label = ratio),size = 5, fill = "#FFFFFF") +
+  labs(x = "", 
+       y = "", 
+       title = "Anatomie du second tour des présidentielles 2017 dans le Finistère", 
+       subtitle = "Données via data.gouv",
+       caption = "http://data-bzh.fr") +
+  databzhTheme()
+
+reg_type_ratio %>%
+  gather(key = Type, value = ratio, 2:7) %>%
+  group_by(`Libellé du département`, Type) %>%
+  summarise(ratio = round(mean(ratio),2)) %>%
+  mutate(Type = factor(Type, levels = c("Inscrits", "Abstentions", 
+                                        "Votants","Blancs","Nuls", 
+                                        "Exprimés"))) %>%
+  filter(`Libellé du département` == "Ille-et-Vilaine") %>%
+  ggplot(aes(Type, ratio)) + 
+  geom_bar(stat = "identity", position = "dodge", fill = databzh$colour4) +
+  geom_label(aes(label = ratio),size = 5, fill = "#FFFFFF") +
+  labs(x = "", 
+       y = "", 
+       title = "Anatomie du second tour des présidentielles 2017 en Ille-et-Vilaine", 
+       subtitle = "Données via data.gouv",
+       caption = "http://data-bzh.fr") +
+  databzhTheme()
+
+reg_type_ratio %>%
+  gather(key = Type, value = ratio, 2:7) %>%
+  group_by(`Libellé du département`, Type) %>%
+  summarise(ratio = round(mean(ratio),2)) %>%
+  mutate(Type = factor(Type, levels = c("Inscrits", "Abstentions", 
+                                        "Votants","Blancs","Nuls", 
+                                        "Exprimés"))) %>%
+  filter(`Libellé du département` == "Morbihan") %>%
+  ggplot(aes(Type, ratio)) + 
+  geom_bar(stat = "identity", position = "dodge", fill = databzh$colour5) +
+  geom_label(aes(label = ratio),size = 5, fill = "#FFFFFF") +
+  labs(x = "", 
+       y = "", 
+       title = "Anatomie du second tour des présidentielles 2017 dans le Morbihan", 
+       subtitle = "Données via data.gouv",
+       caption = "http://data-bzh.fr") +
+  databzhTheme()
+
