@@ -116,7 +116,7 @@ dep_type %>%
   ggplot(aes(Type, ratio, fill = dpt)) + 
   geom_bar(stat = "identity", position = "dodge") + 
   #geom_label(aes(label = pourc),size = 5) +
-  scale_fill_manual(values = databzh$colours) +
+  scale_fill_manual(values = databzh$colours, name = "Département") +
   labs(x = "", 
        y = "", 
        title = "Anatomie du premier tour des législatives 2017 par département", 
@@ -124,6 +124,18 @@ dep_type %>%
        caption = "http://data-bzh.fr") +
   databzhTheme()
   
+dep_nuances %>%
+  ggplot(aes(reorder(Nuances, p_exprimes), p_exprimes, fill = dpt)) +
+  geom_bar(stat = "identity", position = "dodge") + 
+  scale_fill_manual(values = databzh$colours, name = "Département") +
+  coord_flip() +
+  labs(x = "", 
+       y = "", 
+       title = "Premier tour des législatives 2017 en Bretagne", 
+       subtitle = "Données via github.com/ThinkRstat/legislatives2017",
+       caption = "http://data-bzh.fr") +
+  databzhTheme()
+
 # Anato Cotes armor ====
 
 dep_type %>%
