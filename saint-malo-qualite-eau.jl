@@ -6,6 +6,17 @@ summary(df)
 using Gadfly
 using Cairo
 using Fontconfig
+function sumstat(df, col)
+             d = [mean(df[:,col]),
+                  median(df[:,col]),
+                  std(df[:,col])]
+         return d
+end
+sumstat(df, :Ozone_O3_moyenne_annuelle_µg_m3)
+sumstat(df, :Ozone_O3_maximum_horaire)
+sumstat(df, :Dioxyde_d_azote_NO2_moyenne_annuelle_µg_m3)
+sumstat(df, :Dioxyde_d_azote_NO2_maximum_horaire)
+
 Gadfly.push_theme(:default)
 p = plot(df,
          x = :Année,
