@@ -1,0 +1,787 @@
+---
+title: "Groupes Meetup à Rennes - Partie 2"
+params:
+  publish: FALSE
+output:
+  html_document: default
+  html_notebook: default
+---
+
+```{r Setup, echo = F}
+ggraph_rendering <- T
+
+library(igraph, quietly = T)
+if (ggraph_rendering) {
+  library(ggraph)
+}
+source("../DataBzhTools/main.R")
+source("config.R")
+load(file = "data/MeetupRennes.RData")
+load(file = "data/MeetupRennes.Graph.RData")
+
+if (ggraph_rendering) {
+  ggraph_theme <- theme(
+    axis.title = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    panel.background = element_rect(fill = NA),
+    plot.title = element_text(hjust = .5, size = 20)
+  )
+}
+
+rgb_alpha <- function(col, alpha) {
+  cols <- col2rgb(col)
+  return(
+    rgb(
+      cols[1], cols[2], cols[3],
+      maxColorValue = 255,
+      alpha = alpha
+    )
+  )
+}
+
+node.text.size.default <- 4
+```
+
+Dans le [précédent article](http://data-bzh.fr/groupes-meetup-a-rennes-partie-1/), nous avons exploré les **Meetups rennais** en utilisant les outils classiques de visualisation de données (nuages de points, diagrammes en barres, cartographie).
+
+L'organisation des données collectées, qui constitue une structure en réseau (des membres de groupes qualifiés par des thèmes), nous permet d'utiliser des outils d'analyse plus avancés que sont les **bases de données orientées graphes**.
+
+Dans cet article, nous allons découvrir comment les **graphes** et les visualisations associées permettent d’appréhender les données d'une façon différente.
+
+## Données
+
+Les données ont été collectées via l'[interface de programmation](https://www.meetup.com/fr-FR/meetup_api/) (ou [API](https://fr.wikipedia.org/wiki/Interface_de_programmation)) mise à disposition par **[Meetup](https://www.meetup.com)**, et portent sur les groupes situés à **Rennes**, dans la limite d'un **périmètre de 11 km**, à la date du **24/09/2017**.
+
+## Quelques notions de Graphes
+
+Les données d'une [base de données orientée graphes](https://fr.wikipedia.org/wiki/Base_de_données_orientée_graphe) sont stockées selon le principe de la [théorie des graphes](https://fr.wikipedia.org/wiki/Théorie_des_graphes).
+
+Les entités, représentées par des **noeuds** (nodes, vertices), sont reliées par des **arcs** (edges, links). Ceci permet une représentation de l'information moins technique, plus concrète.
+
+La visualisation suivante est un exemple de la représentation en graphe :
+
+```{r graph.exemple, echo = F}
+nodes.df <- data.frame(
+  id = c("Colin", "Michel", "Tristan", "Data-Bzh", "Trail", "Proust", "R"),
+  type = c("personne", "personne", "personne", "site", "activité", "auteur", "langage")
+)
+edges.df <- data.frame(
+  from = c("Colin", "Colin", "Colin", "Michel", "Michel", "Tristan", "Colin", "Michel", "Tristan"),
+  to = c("Data-Bzh", "Data-Bzh", "Proust", "Data-Bzh", "Trail", "Data-Bzh", "R", "R", "R"),
+  type = c("Est créateur", "Est contributeur", "Lit", "Est contributeur", "Pratique", "Est contributeur", "Programme en", "Programme en", "Programme en")
+)
+sample.dg <- graph_from_data_frame(edges.df, vertices = nodes.df)
+sample.layout <- create_layout(sample.dg, layout = "igraph", algorithm = "fr")
+
+(ggp <- databzhPlot(
+  ggraph(sample.layout) +
+    geom_node_point(
+      aes(x, y),
+      #size = 25,
+      size = degree(sample.dg) * 6,
+      colour = ifelse(V(sample.dg)$type == "personne", databzh$colour2, databzh$colour),
+      alpha = .8,
+      show.legend = F) +
+    geom_edge_fan(
+      aes(label = E(sample.dg)$type),
+      label_size = 4,
+      colour = rgb(.5, .5, .5),
+      arrow = arrow(type = "closed"),
+      end_cap = circle(12, "mm"),
+      show.legend = F) +    
+    geom_text(
+      aes(x, y, label = name),
+      size = 8,
+      check_overlap = F) +
+    scale_x_continuous(limits = c(min(sample.layout$x) - .1, max(sample.layout$x) + .1)) +
+    scale_y_continuous(limits = c(min(sample.layout$y) - .1, max(sample.layout$y) + .1)) +
+    ggtitle("Exemple de graphe") +
+    ggraph_theme,
+  ypos = "bottom"
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/part2/00-graph.exemple.png")
+}
+```
+
+*Les noeuds (en rouge, vert pour les personnes) représentent des sujets, les arcs expriment un fait sous la forme d'un verbe. La taille des noeuds est proportionnelle au nombre d'arcs qu'ils ont.*
+
+## Analyse exploratoire
+
+### Groupes et membres
+
+Commençons par l'exploration des groupes et de leurs membres.
+
+```{r member.to.group.graph, echo = F}
+m_to_g.dg <- member_to_group.dg
+
+V(m_to_g.dg)[type == "m"]$color <- rgb_alpha(databzh$colour2, .5)
+V(m_to_g.dg)[type == "g"]$color <- databzh$colour
+
+E(m_to_g.dg)$color <- rgb(.5, .5, .5, alpha = .1)
+
+V(m_to_g.dg)$size <- 1
+V(m_to_g.dg)[type == "g"]$size <- degree(m_to_g.dg, V(m_to_g.dg)[type == "g"], normalized = T) * 50
+V(m_to_g.dg)[type == "g"]$size <- ifelse(V(m_to_g.dg)[type == "g"]$size < 4, 4, V(m_to_g.dg)[type == "g"]$size)
+
+if (ggraph_rendering) {
+  m_to_g.dg.layout <- create_layout(m_to_g.dg, layout = "igraph", algorithm = "fr")
+  g.layout <- m_to_g.dg.layout[m_to_g.dg.layout$type == "g",]
+  m.layout <- m_to_g.dg.layout[m_to_g.dg.layout$type == "m",]
+  
+  (ggp <- databzhPlot(
+    ggraph(m_to_g.dg.layout) +
+      geom_edge_fan(
+        colour = rgb(.5, .5, .5),
+        alpha = .1,
+        show.legend = F) +
+      geom_node_point(
+        data = m.layout,
+        size = m.layout$size,
+        colour = m.layout$color,
+        alpha = .8,
+        show.legend = F) +
+      geom_node_point(
+        data = g.layout,
+        size = g.layout$size,
+        colour = g.layout$color,
+        alpha = .8,
+        show.legend = F) +
+      geom_text(
+        data = g.layout,
+        aes(x, y),
+        label = unlist(g.layout$label),
+        size = node.text.size.default,
+        #colour = "white",
+        check_overlap = T) +
+      ggtitle("Groupes et membres") +
+      ggraph_theme
+  ))
+  
+  if (params$publish) {
+    databzhSavePlot(ggp, "publish/part2/01-member.to.group.png")
+  }
+} else {
+  m_to_g.layout <- layout_with_fr(m_to_g.dg)
+  plot(
+    m_to_g.dg,
+    vertex.label = NA,
+    vertex.frame.color = rgb(0, 0, 0, alpha = .3),
+    layout = m_to_g.layout
+  )
+}
+```
+
+*Les groupes sont en rouge, le membres sont en vert, la taille des groupes est proportionnelle au nombre de membres qu'ils ont (on parle de **[degré](https://fr.wikipedia.org/wiki/Degré_(théorie_des_graphes))**).*
+
+Plus les membres sont positionnés au centre, plus ils sont inscrits à un grand nombre de groupes. A contrario, les membres positionnés vers l'extérieur sont inscrits dans peu de groupes (un seul s'ils se trouvent en périphérie).
+
+Si l'on peut éventuellement apprécier le caractère artistique d'une telle visualisation, l'information qu'elle apporte reste difficilement exploitable, du fait du grand nombre de noeuds (membres et groupes = **`r prettyNum(length(V(member_to_group.dg)), " ")`**) et de liens (**`r prettyNum(length(E(member_to_group.dg)), " ")`**) à faire figurer dans l'espace limité de cet article (notre charte graphique imposant une taille d'image de 1200 * 600 pixels).
+
+Il est plus approprié dans ce cas de faire appel à une visualisation dynamique, permettant de naviguer dans le graphe au gré de ses investigations. Un exemple (réalisé à partir de nos données avec l'outil **[Gephi](https://gephi.org)** et l'extension **[SigmaExporter](https://gephi.org/plugins/#/plugin/sigmaexporter)**) est consultable en suivant [ce lien](https://michelcaradec.github.io/MeetupRennes/member_to_group/index.html).
+
+Le graphe précédent contenait **2 types de noeuds** : les **groupes** et les **membres**. On parle dans ce cas de **[graphe biparti](https://fr.wikipedia.org/wiki/Graphe_biparti)**. Il est possible à partir de ce graphe de déduire 2 graphes **monopartis** (on parle de **[projection](https://en.wikipedia.org/wiki/Bipartite_network_projection)**) :
+
+- 1 graphe dont les noeuds représentent les **groupes**, et les liens le nombre de **membres en commun** entre chaque groupe.
+- 1 graphe dont les noeuds représentent les **membres**, et les liens le nombre de **groupes en commun** entre chaque membre.
+
+Etudions la projection des **groupes** liés par rapport aux **membres** qu'ils ont en commun (pour des raisons de performance, la projection des membres ne sera pas évoquée dans cet article).
+
+```{r group.to.group.via.member.graph, echo = F}
+g_to_g_m.dg <- group_to_group_via_member.dg
+
+V(g_to_g_m.dg)$color <- databzh$colour
+V(g_to_g_m.dg)$size <- scale(degree(g_to_g_m.dg), center = F) * 10
+E(g_to_g_m.dg)$color <- rgb(.5, .5, .5, alpha = .1)
+
+if (ggraph_rendering) {
+  (ggp <- databzhPlot(
+    ggraph(create_layout(g_to_g_m.dg, layout = "igraph", algorithm = "kk")) +
+      geom_edge_fan(
+        colour = rgb(.5, .5, .5),
+        alpha = .1,
+        show.legend = F) +
+      geom_node_point(
+        size = V(g_to_g_m.dg)$size / 1.5,
+        colour = V(g_to_g_m.dg)$color,
+        alpha = .8,
+        show.legend = F) +
+      geom_text(
+        aes(x, y),
+        label = unlist(V(g_to_g_m.dg)$label),
+        size = node.text.size.default,
+        check_overlap = T) +
+      ggtitle("Groupes liés par leurs membres") +
+      ggraph_theme
+  ))
+  
+  if (params$publish) {
+    databzhSavePlot(ggp, "publish/part2/02-group.to.group.via.member.png")
+  }
+} else {
+  g_to_g.layout <- layout_with_kk(g_to_g_m.dg)
+  plot(
+    g_to_g_m.dg,
+    vertex.label = NA,
+    vertex.frame.color = rgb(0, 0, 0, alpha = .3),
+    layout = g_to_g.layout,
+    main = "Groupes liés par leurs membres"
+  )
+}
+```
+
+*Les groupes sont en rouge, la taille des groupes est proportionnelle au nombre de groupes auxquels ils sont connectés.*
+
+La densité de ce graphe illustre les nombreuses connexions entre les groupes. Une personne est effet généralement membre de plusieurs groupes.
+
+```{r group.to.group.via.member.top, echo = F}
+weight.top <- 10
+weight.max <- head(order(E(g_to_g_m.dg)$weight, decreasing = T), weight.top)
+es <- E(g_to_g_m.dg)[weight.max]
+vs <- ends(g_to_g_m.dg, es)
+```
+
+C'est entre le groupe **`r unlist(V(g_to_g_m.dg)[name == vs[1, 1]]$label)`** et **`r unlist(V(g_to_g_m.dg)[name == vs[1, 2]]$label)`** que l'on observe le lien le plus fort, avec **`r es[1]$weight`** membres en commun.
+
+Le tableau suivant énumère les **`r weight.top`** couples de groupes avec le plus fort lien :
+
+```{r group.to.group.via.member.top.list, echo = F}
+(df <- data.frame(
+  `Groupe 1` = unlist(V(g_to_g_m.dg)[vs[,1]]$label),
+  `Groupe 2` = unlist(V(g_to_g_m.dg)[vs[,2]]$label),
+  `Membres en commun` = es$weight
+))
+
+if (params$publish) {
+  writeLines(
+    commonmark::markdown_html(
+      as.character(
+        knitr::kable(
+          df
+        )
+      ),
+      extensions = "table"
+    ),
+    "publish/part2/03-group.to.group.via.member.top.html"
+  )
+}
+```
+
+La même information peut bien entendu être restituée sous la forme d'un graphe :
+
+```{r group.to.group.via.member.top.graph, echo = F}
+g_to_g_m.top.dg <- subgraph.edges(g_to_g_m.dg, es)
+
+V(g_to_g_m.top.dg)$size <- 10
+V(g_to_g_m.top.dg)$label.cex <- .8
+
+if (ggraph_rendering) {
+  (ggp <- databzhPlot(
+    ggraph(create_layout(g_to_g_m.top.dg, layout = "igraph", algorithm = "kk")) +
+      geom_edge_fan(
+        aes(label = E(g_to_g_m.top.dg)$weight),
+        colour = rgb(.5, .5, .5),
+        alpha = .8,
+        show.legend = F) +
+      geom_node_point(
+        size = V(g_to_g_m.top.dg)$size,
+        colour = databzh$colour,
+        alpha = .8,
+        show.legend = F) +
+      geom_text(
+        aes(x, y,
+            label = unlist(V(g_to_g_m.top.dg)$label))
+        ) +
+      ggtitle("Groupes les plus fortement liés par leurs membres") +
+      ggraph_theme
+  ))
+  
+  if (params$publish) {
+    databzhSavePlot(ggp, "publish/part2/03-group.to.group.via.member.top.png")
+  }
+} else {
+  plot(
+    g_to_g_m.top.dg,
+    vertex.label.cex = V(g_to_g_m.top.dg)$label.cex,
+    vertex.label.dist = 2,
+    vertex.label.family = "Arial",
+    vertex.label.color = V(g_to_g_m.top.dg)$label.color,
+    edge.label = E(g_to_g_m.top.dg)$weight,
+    edge.width = 2,
+    edge.color = databzh$colour2,
+    edge.label.color = "black",
+    edge.label.family = "Arial",
+    layout = layout_with_kk(g_to_g_m.top.dg),
+    main = "Groupes les plus fortement liés par leurs membres"
+  )
+}
+```
+
+*Les groupes sont en rouge, les nombres sur les liens indiquent le nombre de membres en commun.*
+
+On observe qu'il existe une interaction parfois importante entre les membres des groupes. A l’extrême, on aura une situation où les mêmes personnes seront inscrites aux mêmes groupes, créant ainsi un **entre-soi**.
+
+Quelle est l'importance de ce phénomène pour les groupes de notre jeu de données ?
+
+```{r group.to.group.via.member.graph.cluster, echo = F}
+group.cluster.dg <- group_to_group_via_member.dg
+group.cluster <- cluster_walktrap(group.cluster.dg, steps = 1)
+#group.cluster <-cluster_fast_greedy(group.cluster.dg)
+#group.cluster <- cluster_edge_betweenness(group.cluster.dg, directed = F)
+
+# Recherche des clusters les plus importants
+tbl <- data.frame(cluster.id = group.cluster$membership, group.id = group.cluster$names)
+tbl.agg <- aggregate(group.id ~ cluster.id, tbl, length)
+names(tbl.agg) <- c("cluster.id", "count")
+tbl.agg <- tbl.agg[order(tbl.agg[,]$count, decreasing = T),]
+
+V(group.cluster.dg)$color <- databzh$colour
+V(group.cluster.dg)$size <- scale(degree(group.cluster.dg), center = F) * 10
+V(group.cluster.dg)$size <- ifelse(V(group.cluster.dg)$size < 4, 4, V(group.cluster.dg)$size)
+
+if (ggraph_rendering) {
+  node.cols <- c(databzh$colours[1:max(group.cluster$membership) - 1], "yellow")[group.cluster$membership]
+  
+  (ggp <- databzhPlot(
+    ggraph(create_layout(group.cluster.dg, layout = "igraph", algorithm = "kk")) +
+      geom_edge_fan(
+        colour = rgb(.5, .5, .5),
+        alpha = .1,
+        show.legend = F) +
+      geom_node_point(
+        aes(x, y),
+        colour = node.cols,
+        alpha = .6,
+        size = V(group.cluster.dg)$size / 1.5,
+        show.legend = F) +
+      geom_text(
+        aes(x, y),
+        colour = node.cols,
+        label = unlist(V(group.cluster.dg)$label),
+        size = node.text.size.default,
+        check_overlap = F) +
+      ggtitle("Communautés de groupes liés par leurs membres") +
+      ggraph_theme
+  ))
+  
+  if (params$publish) {
+    databzhSavePlot(ggp, "publish/part2/04-group.to.group.via.member.cluster.png")
+  }
+} else {
+  plot(
+    group.cluster,
+    group.cluster.dg,
+    vertex.label = NA,
+    vertex.frame.color = rgb(0, 0, 0, alpha = .3),
+    edge.color = rgb(.5, .5, .5, alpha = .1),
+    layout = g_to_g.layout,
+    vertex.size = 3,
+    #mark.groups = communities(group.cluster)[tbl.agg[1:5,]$cluster.id] # Affichage des 5 plus grandes communautés
+  )
+}
+```
+
+*Les groupes sont colorés en fonction de leur appartenance à une même communauté, la taille des groupes est proportionnelle au nombre de groupes auxquels ils sont connectés.*
+
+Les communautés, au nombre de **`r length(unique(group.cluster$membership))`**, ont été détectées selon la méthode du **walktrap**.
+
+*La méthode du **walktrap** consiste à identifier des sous-graphes fortement connectés en navigant aléatoirement de noeuds en noeuds, en partant du principe que le déplacement aléatoire aura tendance à rester à l'intérieur de la communauté plutôt que de la quitter.*
+
+Notre attention est attirée par un groupe isolé dans sa propre communauté (de couleur jaune). Il s'agit du Meetup **`r group.df[group.df$id == group.cluster$names[which(group.cluster$membership == 4)],]$name`**. Cette mise à l'écart s'explique par le fait que ce groupe n'est composé que de **`r group.df[group.df$id == group.cluster$names[which(group.cluster$membership == 4)],]$member.count`** membre (à l'évidence son créateur).
+
+### Groupes et thèmes
+
+Passons à l'exploration des groupes et de leurs thèmes.
+
+Le graphique ci-dessous permet de visualiser le **réseau** constitué par les groupes et leurs thématiques (un même thème pouvant être partagé avec plusieurs groupes).
+
+```{r topic.to.group.graph, echo = F}
+t_to_g.dg <- topic_to_group.dg
+
+V(t_to_g.dg)[type == "t"]$color <- databzh$colour2
+V(t_to_g.dg)[type == "g"]$color <- databzh$colour
+
+V(t_to_g.dg)$size <- 2
+V(t_to_g.dg)[type == "g"]$size <- degree(t_to_g.dg, V(t_to_g.dg)[type == "g"]) / 2
+
+if (ggraph_rendering) {
+  t_to_g.layout <- create_layout(t_to_g.dg, layout = "igraph", algorithm = "fr")
+  t.layout <- t_to_g.layout[t_to_g.layout$type == "t",]
+  g.layout <- t_to_g.layout[t_to_g.layout$type == "g",]
+  
+  (ggp <- databzhPlot(
+    ggraph(t_to_g.layout) +
+      geom_edge_fan(
+        colour = rgb(.5, .5, .5),
+        alpha = .5,
+        show.legend = F) +
+      geom_node_point(
+        data = t.layout,
+        size = t.layout$size,
+        colour = t.layout$color,
+        alpha = .8,
+        show.legend = F) +
+      geom_node_point(
+        data = g.layout,
+        size = g.layout$size,
+        colour = g.layout$color,
+        alpha = .8,
+        show.legend = F) +
+      geom_text(
+        aes(x, y),
+        data = g.layout,
+        label = g.layout$label,
+        size = node.text.size.default,
+        check_overlap = T) +
+      ggtitle("Groupes et thèmes") +
+      ggraph_theme
+  ))
+  
+  if (params$publish) {
+    databzhSavePlot(ggp, "publish/part2/05-topic.to.group.png")
+  }
+} else {
+  t_to_g.layout <- layout_with_fr(t_to_g.dg)
+  plot(
+    t_to_g.dg,
+    vertex.label = NA,
+    vertex.frame.color = rgb(0, 0, 0, alpha = .3),
+    edge.color = rgb(.5, .5, .5, alpha = .5),
+    layout = t_to_g.layout
+  )
+}
+```
+
+*Les groupes sont en rouge, les thèmes sont en vert, la taille des groupes est proportionnelle au nombre de thèmes auxquels ils sont connectés.*
+
+Il y a **`r length(V(t_to_g.dg)[type == "g"])`** groupes pour **`r length(V(t_to_g.dg)[type == "t"])`** thèmes.
+
+```{r topic.to.group.degree,  echo = F}
+t_to_g.degree <- sort(degree(t_to_g.dg, V(t_to_g.dg)[type == "g"]), decreasing = T)
+```
+
+Le groupe avec le plus grand nombre de thèmes est **`r group.df[group.df$id == names(t_to_g.degree)[1],]$name`**, avec les thèmes **`r paste(unlist(strsplit(group.df[group.df$id == names(t_to_g.degree)[1],]$topics.name, split = "|", fixed = T)), collapse = ", ")`**.
+
+```{r topic.to.group.isolated, echo = F}
+isolated <-
+  names(
+    na.omit(
+      sapply(
+        V(t_to_g.dg)[type == "g"],
+        function(v_id) {
+          v <- V(t_to_g.dg)[v_id]
+          v_ego <- ego(t_to_g.dg, nodes = v, order = 1, mindist = 1)
+          return(ifelse(all(ego_size(t_to_g.dg, nodes = v_ego[[1]]) == 2), v, NA))
+        }
+      )
+    )
+  )
+v.isolated <- V(t_to_g.dg)[name %in% isolated]
+```
+
+On observe que certains groupes sont **isolés**, c'est à dire qu'ils ne sont reliés à aucun autres groupes par l'intermédiaire de leurs thèmes (les thèmes étant de fait eux aussi isolés). Ces groupes sont **`r paste(v.isolated$label, collapse = ", ")`**.
+
+```{r topic.to.group.isolated.graph, echo = F}
+t_to_g.isolated.dg <-
+  subgraph.edges(
+    t_to_g.dg,
+    E(t_to_g.dg)[from(v.isolated)]
+  )
+
+V(t_to_g.isolated.dg)$size <- 10
+V(t_to_g.isolated.dg)[type == "g"]$size <- 20
+
+V(t_to_g.isolated.dg)$label.cex <- .8
+V(t_to_g.isolated.dg)[type == "g"]$label.cex <- 1.2
+
+V(t_to_g.isolated.dg)$label.color <- "black"
+V(t_to_g.isolated.dg)[type == "g"]$label.color <- rgb(0, 0, 1, alpha = .8)
+
+if (ggraph_rendering) {
+  (ggp <- databzhPlot(
+    ggraph(create_layout(t_to_g.isolated.dg, layout = "igraph", algorithm = "fr")) +
+      geom_edge_arc(
+        colour = rgb(.5, .5, .5),
+        alpha = .5,
+        show.legend = F) +
+      geom_node_point(
+        size = V(t_to_g.isolated.dg)$size,
+        colour = V(t_to_g.isolated.dg)$color,
+        alpha = .8,
+        show.legend = F) +
+      geom_text(
+        aes(x, y),
+        label = V(t_to_g.isolated.dg)$label,
+        size = V(t_to_g.isolated.dg)$label.cex * 4) +
+      ggtitle("Groupes et thèmes isolés") +
+      ggraph_theme,
+    xpos = "left"
+  ))
+  
+  if (params$publish) {
+    databzhSavePlot(ggp, "publish/part2/06-topic.to.group.isolated.png")
+  }
+} else {
+  plot(
+    t_to_g.isolated.dg,
+    vertex.label.cex = V(t_to_g.isolated.dg)$label.cex,
+    vertex.label.dist = 2,
+    vertex.label.family = "Arial",
+    layout = layout_with_fr(t_to_g.isolated.dg),
+    main = "Groupes et thèmes isolés"
+  )
+}
+```
+
+*Les groupes sont en rouge, les thèmes sont en vert.*
+
+Comme nous l'avons précédemment fait pour les groupes et leurs membres, étudions la projection des **groupes** liés par rapport aux **thèmes** qu'ils ont en commun.
+
+```{r group.to.group.via.topic.graph, echo = F}
+g_to_g_t.dg <- group_to_group_via_topic.dg
+
+V(g_to_g_t.dg)$color <- databzh$colour
+
+V(g_to_g_t.dg)$size <- scale(degree(g_to_g_t.dg), center = F) * 10
+V(g_to_g_t.dg)$size <- ifelse(V(g_to_g_t.dg)$size < 2, 2, V(g_to_g_t.dg)$size)
+
+if (ggraph_rendering) {
+  (ggp <- databzhPlot(
+    ggraph(create_layout(g_to_g_t.dg, layout = "igraph", algorithm = "kk")) +
+      geom_edge_fan(
+        colour = rgb(.5, .5, .5),
+        alpha = .3,
+        show.legend = F) +
+      geom_node_point(
+        size = V(g_to_g_t.dg)$size / 1.5,
+        colour = V(g_to_g_t.dg)$color,
+        alpha = .8,
+        show.legend = F) +
+       geom_text(
+        aes(x, y),
+        label = V(g_to_g_t.dg)$label,
+        size = node.text.size.default,
+        check_overlap = T) +
+      ggtitle("Groupes liés par leurs thèmes") +
+      ggraph_theme
+  ))
+  
+  if (params$publish) {
+    databzhSavePlot(ggp, "publish/part2/07-group.to.group.via.topic.png")
+  }
+} else {
+  plot(
+    g_to_g_t.dg,
+    layout = layout_with_kk(g_to_g_t.dg),
+    vertex.label = NA,
+    vertex.frame.color = rgb(0, 0, 0, alpha = .3),
+    edge.color = rgb(.5, .5, .5, alpha = .3),
+    main = "Groupes liés par leurs thèmes"
+  )
+}
+```
+
+*Les groupes sont en rouge, la taille des groupes est proportionnelle au nombre de groupes auxquels ils sont connectés.*
+
+On retrouve sur cette visualisation les groupes isolés par leurs thèmes précédemment évoqués.
+
+Poursuivons avec la projection des **thèmes** liés par rapport aux **groupes** qu'ils ont en commun.
+
+```{r topic.to.topic.via.group.graph, echo = F}
+t_to_t_g.dg <- topic_to_topic.dg
+
+V(t_to_t_g.dg)$color <- databzh$colour
+E(t_to_t_g.dg)$color <- rgb(.5, .5, .5, alpha = .1)
+
+V(t_to_t_g.dg)$size <- scale(degree(t_to_t_g.dg), center = F) * 2
+V(t_to_t_g.dg)$size <- ifelse(V(t_to_t_g.dg)$size < 1, 1, V(t_to_t_g.dg)$size)
+
+if (ggraph_rendering) {
+  (ggp <- databzhPlot(
+    ggraph(create_layout(t_to_t_g.dg, layout = "igraph", algorithm = "fr")) +
+      geom_edge_fan(
+        colour = rgb(.5, .5, .5),
+        alpha = .2,
+        show.legend = F) +
+      geom_node_point(
+        size = V(t_to_t_g.dg)$size,
+        colour = V(t_to_t_g.dg)$color,
+        alpha = .8,
+        show.legend = F) +
+      geom_text(
+        aes(x, y),
+        label = V(t_to_t_g.dg)$label,
+        size = node.text.size.default,
+        check_overlap = T) +
+      ggtitle("Thèmes liés par leurs groupes") +
+      ggraph_theme
+  ))
+  
+  if (params$publish) {
+    databzhSavePlot(ggp, "publish/part2/08-topic.to.topic.via.group.png")
+  }
+} else {
+  plot(
+    t_to_t_g.dg,
+    vertex.label = NA,
+    vertex.frame.color = rgb(0, 0, 0, alpha = .3),
+    edge.color = rgb(.5, .5, .5, alpha = .3),
+    layout = layout_with_fr(t_to_t_g.dg),
+    main = "Thèmes liés par leurs groupes"
+  )
+}
+```
+
+*Les thèmes sont en rouge, la taille des thèmes est proportionnelle au nombre de thèmes auxquels ils sont connectés.*
+
+Les ensembles isolés matérialisent les thèmes des groupes isolés.
+
+### Zoom sur les groupes Data
+
+Notre étude a jusqu'à présent porté sur l'ensemble de la communauté Meetup rennaise.
+
+Terminons avec un sous-ensemble de notre communauté, dédié aux **Meetups traitant de la données** que sont [Rennes Data Club](https://www.meetup.com/Rennes-Data-Club/), [Machine Learning Rennes](https://www.meetup.com/Meetup-Machine-Learning-Rennes/) et [Data2Breakfast](https://www.meetup.com/Data2Breakfast/).
+
+```{r member.to.group.data.graph, echo = F}
+# 21011563 - Meetup Machine Learning Rennes
+# 21023537 - Rennes Data Club
+# 20782897 - Data2Breakfast
+data_m_to_g.dg <-
+  subgraph.edges(
+    member_to_group.dg,
+    E(member_to_group.dg)[
+      from(
+        V(member_to_group.dg)[
+          name %in% c(21011563, 21023537, 20782897)
+        ]
+      )
+    ]
+  )
+
+V(data_m_to_g.dg)$label <- ifelse(V(data_m_to_g.dg)$type == "g", V(data_m_to_g.dg)$label, "")
+V(data_m_to_g.dg)$label.family <- "Arial"
+V(data_m_to_g.dg)$label.cex <- 1
+
+V(data_m_to_g.dg)$frame.color = rgb(0, 0, 0, alpha = .3)
+
+V(data_m_to_g.dg)$color <- rgb_alpha(databzh$colour2, .5)
+V(data_m_to_g.dg)[type == "g"]$color <- databzh$colour
+E(data_m_to_g.dg)$color <- rgb(.5, .5, .5, alpha = .3)
+
+V(data_m_to_g.dg)$size <- 3
+V(data_m_to_g.dg)[type == "g"]$size <- degree(data_m_to_g.dg, V(data_m_to_g.dg)[type == "g"], normalized = T) * 50
+
+# Moi
+V(data_m_to_g.dg)[name == MeetupID]$color <- "yellow"
+
+if (ggraph_rendering) {
+  data_m_to_g.dg.layout <- create_layout(data_m_to_g.dg, layout = "igraph", algorithm = "fr")
+  g.layout <- data_m_to_g.dg.layout[data_m_to_g.dg.layout$type == "g",]
+  m.layout <- data_m_to_g.dg.layout[data_m_to_g.dg.layout$type == "m",]
+  me.layout <- data_m_to_g.dg.layout[data_m_to_g.dg.layout$name == MeetupID,]
+  
+  (ggp <- databzhPlot(
+    ggraph(data_m_to_g.dg.layout) +
+      geom_edge_fan(
+        colour = rgb(.5, .5, .5),
+        alpha = .2,
+        show.legend = F) +
+      geom_node_point(
+        data = m.layout,
+        size = m.layout$size,
+        colour = m.layout$color,
+        alpha = .8,
+        show.legend = F) +
+      geom_node_point(
+        data = me.layout,
+        size = me.layout$size,
+        colour = me.layout$color,
+        alpha = .8,
+        show.legend = F) +
+      geom_node_point(
+        data = g.layout,
+        size = g.layout$size,
+        colour = g.layout$color,
+        alpha = .8,
+        show.legend = F) +
+      geom_text(
+        aes(x, y),
+        label = unlist(data_m_to_g.dg.layout$label),
+        size = data_m_to_g.dg.layout$label.cex * 4,
+        check_overlap = F) +
+      ggtitle("Groupes Data et leurs membres") +
+      ggraph_theme
+  ))
+  
+  if (params$publish) {
+    databzhSavePlot(ggp, "publish/part2/09-member.to.group.data.png")
+  }
+} else {
+  data_m_to_g.layout <- layout_with_fr(data_m_to_g.dg)
+  plot(
+    data_m_to_g.dg,
+    layout = data_m_to_g.layout,
+    main = "Groupes Data et leurs membres"
+  )
+}
+```
+
+*Les groupes sont en rouge, les membres sont en vert, la taille des groupes est proportionnelle au nombre de membres auxquels ils sont connectés.*
+
+On visualise clairement les membres communs à 2, voire 3 groupes.
+
+Les plus attentifs auront remarqué un cercle jaune noyé au milieu du graphe, représentant un membre dont ils n'auront aucun mal à deviner l'identité. ;-)
+
+Si l'on applique une segmentation (toujours selon la méthode du **walktrap**), on constate que le groupe **Meetup Machine Learning Rennes** se démarque des autres groupes, du moins du point de vue des connexions de ses membres avec les autres groupes...
+
+```{r member.to.group.data.cluster.graph, echo = F}
+data_group.cluster <- cluster_walktrap(data_m_to_g.dg)
+
+if (ggraph_rendering) {
+  data_m_to_g.dg.layout <- create_layout(data_m_to_g.dg, layout = "igraph", algorithm = "fr")
+  node.cols <- databzh$colours[1:max(data_group.cluster$membership) + 5][data_group.cluster$membership]
+
+  (ggp <- databzhPlot(
+    ggraph(data_m_to_g.dg.layout) +
+      geom_edge_fan(
+        colour = rgb(.5, .5, .5),
+        alpha = .2,
+        show.legend = F) +
+      geom_node_point(
+        aes(x, y),
+        colour = node.cols,
+        size = data_m_to_g.dg.layout$size,
+        alpha = .8,
+        show.legend = F) +
+      geom_text(
+        aes(x, y),
+        label = unlist(data_m_to_g.dg.layout$label),
+        size = data_m_to_g.dg.layout$label.cex * 4,
+        check_overlap = F) +
+      ggtitle("Communautés des groupes Data et leurs membres") +
+      ggraph_theme
+  ))
+  
+  if (params$publish) {
+    databzhSavePlot(ggp, "publish/part2/10-member.to.group.data.cluster.png")
+  }
+} else {
+  plot(
+    data_group.cluster,
+    data_m_to_g.dg,
+    layout = data_m_to_g.layout,
+    edge.color = rgb(.5, .5, .5, alpha = .3),
+    main = "Segmentation des groupes Data et leurs membres"
+  )
+}
+```
+
+*Les groupes et membres sont colorés en fonction de leur appartenance à une même communauté, la taille des groupes est proportionnelle au nombre de membres auxquels ils sont connectés.*
+
+## Conclusion
+
+Les possibilités offertes par les visualisations en graphes n'ont de limite que notre imagination. Nous nous arrêterons à ce stade en ce qui concerne cet article.
+
+Dans un prochain article, nous nous intéresserons aux moyens d'interroger les données sous forme de graphes.
