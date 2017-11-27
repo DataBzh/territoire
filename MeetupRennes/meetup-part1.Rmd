@@ -1,0 +1,288 @@
+---
+title: "Groupes Meetup à Rennes - Partie 1"
+params:
+  publish: FALSE
+output:
+  html_document: default
+  html_notebook: default
+---
+
+```{r Setup, echo = F}
+library(ggmap)
+source("../DataBzhTools/main.R")
+load(file = "data/MeetupRennes.RData")
+```
+
+A une époque encore récente, toutes personnes partageant les mêmes centres d'intérêts passaient généralement par des structures comme des clubs, des centres culturels ou des associations afin de se rencontrer et d'échanger sur leurs passions communes.
+
+L'avènement du smartphone et des réseaux sociaux a facilité ce processus  de rencontre grâce à l'émergence de plateformes dédiées.
+
+**[Meetup](https://www.meetup.com)** est l'une d'entre elles, permettant à des personnes ayant les mêmes passions et vivant dans un même lieu de s'identifier et de se retrouver dans le cadre de rencontres organisées à l’initiative des créateurs des groupes (pour plus d'information, consulter la [fiche Wikipedia](https://fr.wikipedia.org/wiki/Meetup.com)).
+
+Dans cette série d'articles, nous allons étudier les groupes Meetup de la **région de Rennes**.
+
+## Données
+
+Comme toute plateforme souhaitant dynamiser son activité, Meetup propose une [interface de programmation](https://www.meetup.com/fr-FR/meetup_api/) (ou [API](https://fr.wikipedia.org/wiki/Interface_de_programmation)) permettant d'effectuer programmatiquement diverses opérations.
+
+Dans le cadre de notre exploration, nous allons utiliser les fonctions suivantes :
+
+- [Find Groups](https://www.meetup.com/meetup_api/docs/find/groups/) : permet de récupérer une liste de groupes selon divers critères. Dans notre cas, nous utiliserons une sélection par géolocalisation.
+- [Members](https://www.meetup.com/meetup_api/docs/2/members/) : permet de récupérer les membres d'un groupe.
+
+*L'accès à l'API étant ouvert (il suffit simplement d'avoir un compte Meetup et de demander une clé d'API), toute utilisation intensive est sanctionnée par un déni de réponse. Il faut donc modérer l'envoi de requêtes groupées en s'appuyant sur les [informations retournées par l'API](https://www.meetup.com/meetup_api/docs/#limits). [Colin](http://colinfay.me) a écrit un [article sur le sujet](http://colinfay.me/rstats-api-calls-and-sys-sleep/).*
+
+Notre étude portera sur les groupes situés à **Rennes**, dans la limite d'un **périmètre de 11 km** (soit environ 7 miles, qui est l'unité de mesure utilisée par l'API).
+
+Les données traitées dans cet article ont été collectées le **24/09/2017**. L'exactitude des chiffres n'est donc garantie qu'à cette date, du fait de l'évolution constante du réseau social.
+
+## Analyse exploratoire
+
+### Les groupes
+
+Le nombre de groupes Meetup est de **`r nrow(group.df)`**.
+
+Commençons par l'étude des groupes en fonction de leurs membres.
+
+```{r group.size, echo = F}
+tbl <- na.omit(group.df[, c("id", "name", "member.count")])
+member.count.threshold <- 300
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(name, member.count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = ifelse(member.count > member.count.threshold, prettyNum(member.count, " "), "")), size = 4, colour = "grey50") +
+    scale_x_discrete(limits = tbl[order(tbl$member.count, decreasing = F),]$name) +
+    xlab("Groupes") +
+    ylab("Nombre de membres") +
+    ggtitle("Popularité des groupes") +
+    databzhTheme() +
+    theme(axis.text.y = element_text(size = 6)) +
+    coord_flip()
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/part1/01-group_size.png")
+}
+```
+
+C'est le groupe **`r tbl[order(tbl$member.count, decreasing = T)[1],]$name`** qui a le plus grand nombre de membres (**`r prettyNum(tbl[order(tbl$member.count, decreasing = T)[1],]$member.count, " ")`**).
+
+Un groupe populaire ne signifie pas qu'il est actif (à savoir qu'il propose un grand nombre d'évènements). La visualisation suivante énumère les groupes ayant organisé au moins un évènement **depuis le 1er septembre 2017**.
+
+```{r group.last.event, echo = F}
+tbl <- na.omit(group.df[group.df$last_event >= "2017-09-01", c("id", "name", "last_event")])
+tbl$days <- as.integer(as.Date(tbl$last_event) -  as.Date("2017-08-31"))
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(name, days)) +
+    geom_point(stat = "identity", colour = databzh$colour, size = 3, shape = 15) +
+    scale_x_discrete(limits = tbl[order(tbl$last_event, decreasing = T),]$name) +
+    scale_y_continuous(breaks = sort(unique(tbl$days)), labels = sort(unique(tbl$last_event))) +
+    xlab("Groupes") +
+    ylab("Date dernier évènement") +
+    ggtitle("Activité des groupes") +
+    databzhTheme() +
+    theme(axis.text.y = element_text(size = 9), axis.text.x = element_text(angle = 45, hjust = 1)) +
+    coord_flip()
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/part1/02-group_last_event.png")
+}
+```
+
+### Les membres
+
+On comptabilise un total de **`r prettyNum(nrow(member.df), " ")`** personnes distinctes (membres) inscrites à au moins un groupe.
+
+Même si cet article ne traite que des **groupes rennais**, les membres peuvent-être originaires de différents coins du monde, comme le montre la carte suivante.
+
+```{r member.world.map, echo = F}
+map_world <- map_data("world")
+
+(ggp <- databzhPlot(
+  ggplot() +
+  geom_polygon(
+    data = map_world,
+    aes(x = long, y = lat, group = group),
+    fill = "grey",
+    color = "black"
+  ) +
+  #coord_fixed(1.3) +
+  geom_point(
+    data = member.df,
+    aes(x = lon, y = lat),
+    colour = databzh$colour,
+    size = 2,
+    alpha = .5
+  ) +
+  ggtitle("Membres dans le monde") +
+  databzhTheme() +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank()),
+  xpos = "left"
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/part1/03-member_world_map.png")
+}
+```
+
+Ce phénomène reste néanmoins mineur, la plus grande partie des membres se trouvant à proximité du périmètre des groupes.
+
+```{r member.city.hist, echo = F}
+tbl <- ifelse(member.df$city == "Rennes", "Rennes", "Autre")
+tbl <- as.data.frame(table(tbl))
+names(tbl) <- c("place", "count")
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(place, count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(count, " ")), size = 4, colour = "grey50") +
+    xlab("Lieu") +
+    ylab("Nombre") +
+    ggtitle("Membres à Rennes") +
+    databzhTheme(),
+  xpos = "left"
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/part1/04-member_city_hist.png")
+}
+```
+
+De nombreux membres sont aussi localisés dans le reste de la Bretagne.
+
+```{r member.france.map, echo = F}
+map_france <- map_data("france")
+map_bzh <- map_france[map_france$region %in% c("Finistere", "Ille-et-Vilaine", "Morbihan", "Cotes-Darmor"),]
+
+(ggp <- databzhPlot(
+  ggplot() +
+  geom_polygon(
+    data = map_bzh,
+    aes(x = long, y = lat, group = group),
+    fill = "grey",
+    color = "black"
+  ) +
+  #coord_fixed(1.3) +
+  geom_point(
+    data = member.df[member.df$lon >= range(map_bzh$long)[1] & member.df$lon <= range(map_bzh$long)[2] & member.df$lat >= range(map_bzh$lat)[1] & member.df$lat <= range(map_bzh$lat)[2],],
+    aes(x = lon, y = lat),
+    colour = databzh$colour,
+    size = 3,
+    alpha = .5
+  ) +
+  ggtitle("Membres en Bretagne") +
+  databzhTheme() +
+  theme(axis.title.x = element_blank(), axis.title.y = element_blank()),
+  xpos = "left",
+  ypos = "bottom"
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/part1/05-member_bzh_map.png")
+}
+```
+
+Le nuage de points suivant, croisant tous les groupes avec tous les membres permet d'observer à un niveau global la répartition des affectations.
+
+```{r member.heatmap, echo = F}
+# Utilisation de sample() pour distribuer aléatoirement les numéros d'ordre, et ainsi éviter le regroupement des croisements.
+member.ids <- sample(unique(member_to_group.df$member.id))
+group.ids <- sample(unique(member_to_group.df$group.id))
+
+tbl <- member_to_group.df
+tbl$member.num <- match(tbl$member.id, member.ids)
+tbl$group.num <- match(tbl$group.id, group.ids)
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(member.num, group.num)) +
+    geom_point(colour = databzh$colour, alpha = .5, size = 1, shape = 15) +
+    xlab("Membres") +
+    ylab("Groupes") +
+    ggtitle("Groupes & membres") +
+    databzhTheme() +
+    theme(axis.text.x = element_blank(), axis.text.y = element_blank())
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/part1/06-member_heatmap.png")
+}
+```
+
+Les alignements horizontaux les plus denses correspondent aux groupes avec le plus grand nombre de membres. On devine les groupes les plus populaires précédemment évoqués.
+
+Les alignements verticaux, correspondant aux membres présents dans un grand nombre de groupes, sont beaucoup plus difficilement identifiables. Rares sont en effet les personnes inscrites à l'ensemble des groupes...
+
+### Les thèmes
+
+Chaque groupe possède une ou plusieurs thématiques (les "topics") permettant leur qualification et facilitant leur recherche. Pour les groupes rennais, pas moins de **`r nrow(topic.df)`** thèmes sont référencés.
+
+```{r topic.count.top, echo = F}
+top.n <- 20
+```
+
+Le graphique ci-dessous met en évidence les **`r top.n` thèmes** les plus fréquents.
+
+```{r topic.count, echo = F}
+tbl <- topic.df[head(order(topic.df$group.count, decreasing = T), top.n),]
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(topic.name, group.count)) +
+    geom_bar(stat = "identity", fill = databzh$colour) +
+    geom_text(aes(label = prettyNum(group.count, " ")), size = 4, colour = "grey50") +
+    scale_x_discrete(limits = tbl[order(tbl$group.count, decreasing = F),]$topic.name) +
+    xlab("Thèmes") +
+    ylab("Nombre de groupes") +
+    ggtitle(paste0(top.n, " thèmes les plus populaires")) +
+    databzhTheme() +
+    theme(axis.text.y = element_text(size = 10)) +
+    coord_flip()
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/part1/07-topic_count.png")
+}
+```
+
+C'est le thème **`r tbl[1,]$topic.name`**, suivi du thème **`r tbl[2,]$topic.name`** que l'on retrouve le plus souvent.
+
+Le nuage de points suivant, croisant tous les groupes avec tous les thèmes permet d'observer à un niveau global la répartition des affectations.
+
+```{r topic.heatmap, echo = F}
+# Utilisation de sample() pour distribuer aléatoirement les numéros d'ordre, et ainsi éviter le regroupement des croisements.
+topic.ids <- sample(unique(topic_to_group.df$topic.id))
+group.ids <- sample(unique(topic_to_group.df$group.id))
+
+tbl <- topic_to_group.df
+tbl$topic.num <- match(tbl$topic.id, topic.ids)
+tbl$group.num <- match(tbl$group.id, group.ids)
+
+(ggp <- databzhPlot(
+  ggplot(data = tbl, aes(group.num, topic.num)) +
+    geom_point(colour = databzh$colour, alpha = .5, size = 2, shape = 15) +
+    xlab("Groupes") +
+    ylab("Thèmes") +
+    ggtitle("Groupes & thèmes") +
+    databzhTheme() +
+    theme(axis.text.x = element_blank(), axis.text.y = element_blank())
+))
+
+if (params$publish) {
+  databzhSavePlot(ggp, "publish/part1/08-topic_heatmap.png")
+}
+```
+
+L'alignement horizontal ou vertical des points indique dans quelle mesure un même thème est associé à plusieurs groupes, ou un même groupe possède plusieurs thèmes.
+
+## Conclusion
+
+Ainsi s'achève la première partie de notre série sur les **meetups rennais**. Dans un prochain article, nous poursuivrons l'exploration de nos données en utilisant un autre type de visualisation.
+
+Et en attendant, n'hésitez pas à vous inscrire aux Meetups traitant de la données (liste non-exhaustive) :
+
+- [Rennes Data Club](https://www.meetup.com/Rennes-Data-Club/).
+- [Machine Learning Rennes](https://www.meetup.com/Meetup-Machine-Learning-Rennes/).
+- [Data2Breakfast](https://www.meetup.com/Data2Breakfast/).
+- [Hadoop User Group Grand Ouest](https://www.meetup.com/Hadoop-User-Group-Grand-Ouest/).
