@@ -157,31 +157,3 @@ data %>%
        y = "Volume") + 
   databzhTheme()
 
-glimpse(data)
-
-shapiro.test(data$`Estimation du coût`)
-cor.test(data$`Estimation du coût`, data$Total, na.action = na.omit(), method = "kendall")
-
-select(data, `Estimation du coût`, Total) %>% na.omit()
-
-# Catégorie et Statut 
-
-chisq.test(data$Catégorie, data$`Dernier statut`)
-table(data$Catégorie, data$`Dernier statut`)
-
-data %>%
-  group_by(Catégorie, `Dernier statut`) %>%
-  summarise(Compte = n()) %>%
-  na.omit() %>% 
-  #Start your ggplot 
-  ggplot(aes(Catégorie, `Dernier statut`, fill = Compte)) +
-  geom_tile() +
-  coord_flip() + 
-  labs(title = "Catégorie et Dernier Statut des projets du\nBudget participatif - Ville de Rennes - Saison 3", 
-     subtitle = "Données via : Open Data Rennes",
-     caption = "http://data-bzh.fr", 
-     x = "Catégorie", 
-     y = "Dernier Statut") + 
-  databzhTheme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-
