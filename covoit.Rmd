@@ -1,0 +1,100 @@
+---
+title: "Untitled"
+author: "Colin Fay"
+date: "11/16/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+```
+
+```{r dl}
+library(tidyverse)
+download.file("https://static.data.gouv.fr/resources/aires-de-covoiturage-en-france/20181024-154858/fichier-national-aires-covoiturage-2018-consolide-par-blablacar.xlsx", "data.xlsx")
+df <- readxl::read_excel("data.xlsx")
+bret <- df %>% 
+  extract(`Code postal`, "dep", "(.{1,2})...", remove = FALSE) %>%
+  filter(dep %in% c("35", "22", "29", "56"))
+source("data-bzh-tools-master/main.R")
+```
+
+## Parcours en dataviz du jeu de données des aires de covoiturage de Bretagne, mis en ligne par Blablacar
+
+<--more--!> 
+
+### À propos des données 
+
+Ces données sont disponibles sur le site de [data.gouv](https://www.data.gouv.fr/fr/datasets/aires-de-covoiturage-en-france/). Les données ont été agrégées par Blablacar, et contiennent les données envoyées par les collectivités locales sur les aires de covoiturage en France.
+
+Nous avons filtré ce jeu de données, pour ne retenir que les données de Bretagne, soit `r nrow(bret)` éléments. 
+
+### Comptage 
+
+Voici la répartition par département :
+
+```{r}
+bret %>% 
+  count(dep) %>%
+  ggplot(aes(reorder(dep, n), n)) + 
+  geom_col(fill = databzh$colour1) + 
+  coord_flip() + 
+  labs(title = "Nombre d'aire de covoiturage", 
+       subtitle = "Données via Blablacar", 
+       x = "Département", 
+       y = "Compte",
+       caption = "http://data-bzh.fr") + 
+  databzhTheme()
+```
+
+
+Si l'on s'intéresse aux 10 villes les plus fournies en aires de covoiturage: 
+
+```{r}
+bret %>%
+  count(Ville, sort = TRUE) %>%
+  top_n(10) %>% 
+  knitr::kable() %>%
+  clipr::write_clip()
+```
+
+### Typologie 
+
+```{r}
+bret %>%
+  count(`Type de parking`, sort = TRUE) %>%
+  knitr::kable() %>%
+  clipr::write_clip()
+```
+
+### Carto 
+
+Soit, sur une carte: 
+
+```{r}
+library(rgdal)
+roj <- readOGR(dsn=".", layer="R53_dep")
+wmap_df <- fortify(roj)
+ggplot(wmap_df, aes(long,lat, group=group)) + 
+  geom_polygon() + 
+  coord_map() +
+  geom_path(data=wmap_df, aes(long, lat, group=group), color="grey50") +
+  geom_point(data = bret, aes(as.numeric(Longitude), as.numeric(Latitude), col = dep, group = NULL), size  = 2) + 
+  scale_color_manual(values = databzh$colours) +
+  coord_map() +
+  labs(x = "", 
+       y = "", 
+       title = "Aires de covoiturage en Bretagne", 
+       subtitle = "Données via Blablacar",
+       caption = "http://data-bzh.fr") + 
+  theme(title=element_text(),
+        plot.title=element_text(margin=margin(0,0,20,0), size=18, hjust = 0.5),
+        axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks=element_blank(),
+        axis.title.x=element_blank(),
+        axis.title.y=element_blank(),
+        panel.grid.major= element_line("grey50", linetype = "dashed"), 
+        panel.background= element_blank()) 
+```
+
