@@ -1,0 +1,270 @@
+---
+title: "Untitled"
+author: "Colin Fay"
+date: "11/16/2018"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+```
+
+```{r dl}
+source("data-bzh-tools-master/main.R")
+library(tidyverse)
+download.file("https://data.rennesmetropole.fr/explore/dataset/resultats_e19/download/?format=csv&timezone=Europe/Berlin&use_labels_for_header=true", "europ.csv")
+df <- read_csv2("europ.csv")
+names(df)
+table(df$NIVEAU_DETAIL)
+vi <- filter(df, NIVEAU_DETAIL == "vi")
+
+cand <- vi %>% 
+  select(contains("CANDIDAT_")) %>%
+  gather("code", "name")
+
+pour <- vi %>% 
+  select(matches("POURCENTAGE_[0-9]{1,2}")) %>%
+  gather("code_pour", "pourcentage") 
+
+nbvoix <- vi %>% 
+  select(matches("NB_VOIX_[0-9]{1,2}")) %>%
+  gather("code_nb", "nb_voix") 
+
+full <- cbind(cand, pour) %>% cbind(nbvoix)
+```
+
+## Parcours en dataviz des résultats des européennes 2019, à Rennes
+
+<--more--!> 
+
+### À propos des données 
+
+Ces données sont disponibles sur le site de [Rennes Open Data](https://data.rennesmetropole.fr/explore/dataset/resultats_e19/information/). 
+
+### Pour toute la ville 
+
+Participation pour la ville:
+
+```{r}
+knitr::kable(
+  vi %>% select(
+    NB_INSCRITS, NB_EMARGEMENTS, NB_BULLETINS,
+    NB_NULS, NB_EXPRIMES, NB_BLANC, POURCENTAGE_PARTICIPATION
+    )
+) %>% clipr::write_clip()
+```
+
+Résultats pour la ville, en nombre de voix:
+
+```{r}
+{ggplot(full, aes(reorder(name, nb_voix), nb_voix)) + 
+  geom_col( fill = databzh$colour1) + 
+  coord_flip() + 
+  labs(x = "Candidats", 
+       y = "", 
+       title = "Résultats des élections Européennes 2019 à Rennes - Tour 1", 
+       subtitle = "https://data.rennesmetropole.fr/",
+       caption = "http://data-bzh.fr") +
+  databzhTheme()} %>%
+  ggsave(filename = "europ_res_vill.png", 
+        plot = ., 
+         width = 12.5, height = 10.4, units = "in")
+```
+
+```{r}
+full %>%
+  arrange(desc(nb_voix)) %>%
+  select(name, pourcentage, nb_voix) %>%
+  tibble::rownames_to_column("Place")
+```
+
+
+### Participation par Circonscription
+
+```{r}
+filter(df, NIVEAU_DETAIL == "bu") %>%
+  group_by(NUMERO_CANTON) %>%
+  summarise(
+    NB_INSCRITS = sum(NB_INSCRITS), 
+    NB_EMARGEMENTS = sum(NB_EMARGEMENTS),
+    NB_BULLETINS = sum(NB_BULLETINS),
+    NB_NULS = sum(NB_NULS),
+    NB_EXPRIMES = sum(NB_EXPRIMES),
+    NB_BLANC = sum(NB_BLANC)
+    ) %>%
+  knitr::kable() %>%
+  clipr::write_clip()
+```
+
+### Participation par Circonscription
+
+```{r}
+filter(df, NIVEAU_DETAIL == "bu") %>%
+  group_by(NOM_CIRCONSCRIPTION) %>%
+  summarise(
+    NB_INSCRITS = sum(NB_INSCRITS), 
+    NB_EMARGEMENTS = sum(NB_EMARGEMENTS),
+    NB_BULLETINS = sum(NB_BULLETINS),
+    NB_NULS = sum(NB_NULS),
+    NB_EXPRIMES = sum(NB_EXPRIMES),
+    NB_BLANC = sum(NB_BLANC)
+    ) %>%
+  knitr::kable()
+```
+
+### Résultats par Circonscription
+
+Combien de bureaux de vote par circonscription ? 
+
+```{r}
+df <- filter(df, NIVEAU_DETAIL == "bu")
+count(df, NUMERO_CIRCONSCRIPTION, NOM_CIRCONSCRIPTION) %>%
+  knitr::kable() %>%
+  clipr::write_clip()
+```
+
+Nombre d'émargement par circonscription
+
+```{r}
+df %>% 
+  group_by(NOM_CIRCONSCRIPTION) %>%
+  summarise(
+    NB_EMARGEMENTS = sum(NB_EMARGEMENTS)
+  )
+```
+
+
+
+#### 1ère circonscription
+
+```{r}
+vi <- filter(df, NUMERO_CIRCONSCRIPTION == 1)
+
+cand <- vi %>% 
+  select(contains("CANDIDAT_")) %>%
+  gather("code", "name") %>%
+  distinct()
+
+nbvoix <- vi %>% 
+  select(matches("NB_VOIX_[0-9]{1,2}")) %>%
+  gather("code_nb", "nb_voix")  %>%
+  group_by(code_nb) %>%
+  summarize(
+    nb_voix = sum(nb_voix)
+  )
+
+full <- cbind(cand, nbvoix) 
+{ggplot(full, aes(reorder(name, nb_voix), nb_voix)) + 
+  geom_col(fill = databzh$colour2) + 
+  coord_flip() + 
+  labs(x = "Candidats", 
+       y = "", 
+       title = "Résultats des élections Européennes 2019 à Rennes - Tour 1\n1ère circonscription", 
+       subtitle = "https://data.rennesmetropole.fr/",
+       caption = "http://data-bzh.fr") +
+  databzhTheme()} %>%
+  ggsave(filename = "europ_circ_1.png", 
+        plot = ., 
+         width = 12.5, height = 10.4, units = "in")
+```
+
+#### 2ème circonscription
+
+```{r}
+vi <- filter(df, NUMERO_CIRCONSCRIPTION == 2) 
+
+cand <- vi %>% 
+  select(contains("CANDIDAT_")) %>%
+  gather("code", "name") %>%
+  distinct()
+
+nbvoix <- vi %>% 
+  select(matches("NB_VOIX_[0-9]{1,2}")) %>%
+  gather("code_nb", "nb_voix")  %>%
+  group_by(code_nb) %>%
+  summarize(
+    nb_voix = sum(nb_voix)
+  )
+
+full <- cbind(cand, nbvoix) 
+{ggplot(full, aes(reorder(name, nb_voix), nb_voix)) + 
+  geom_col(fill = databzh$colour3) + 
+  coord_flip() + 
+  labs(x = "Candidats", 
+       y = "", 
+       title = "Résultats des élections Européennes 2019 à Rennes - Tour 1\n2ème circonscription", 
+       subtitle = "https://data.rennesmetropole.fr/",
+       caption = "http://data-bzh.fr") +
+  databzhTheme()} %>%
+  ggsave(filename = "europ_circ_2.png", 
+        plot = ., 
+         width = 12.5, height = 10.4, units = "in")
+```
+
+#### 3ème circonscription
+
+```{r}
+vi <- filter(df,NUMERO_CIRCONSCRIPTION == 3) 
+
+cand <- vi %>% 
+  select(contains("CANDIDAT_")) %>%
+  gather("code", "name") %>%
+  distinct()
+
+nbvoix <- vi %>% 
+  select(matches("NB_VOIX_[0-9]{1,2}")) %>%
+  gather("code_nb", "nb_voix")  %>%
+  group_by(code_nb) %>%
+  summarize(
+    nb_voix = sum(nb_voix)
+  )
+
+full <- cbind(cand, nbvoix) 
+{ggplot(full, aes(reorder(name, nb_voix), nb_voix)) + 
+  geom_col(fill = databzh$colour4) + 
+  coord_flip() + 
+  labs(x = "Candidats", 
+       y = "", 
+       title = "Résultats des élections Européennes 2019 à Rennes - Tour 1\n3ème circonscription", 
+       subtitle = "https://data.rennesmetropole.fr/",
+       caption = "http://data-bzh.fr") +
+  databzhTheme()} %>%
+  ggsave(filename = "europ_circ_3.png", 
+        plot = ., 
+         width = 12.5, height = 10.4, units = "in")
+```
+
+#### 1ère circonscription
+
+```{r}
+vi <- filter(df, NUMERO_CIRCONSCRIPTION == 8) 
+
+cand <- vi %>% 
+  select(contains("CANDIDAT_")) %>%
+  gather("code", "name") %>%
+  distinct()
+
+nbvoix <- vi %>% 
+  select(matches("NB_VOIX_[0-9]{1,2}")) %>%
+  gather("code_nb", "nb_voix")  %>%
+  group_by(code_nb) %>%
+  summarize(
+    nb_voix = sum(nb_voix)
+  )
+
+full <- cbind(cand, nbvoix) 
+{ggplot(full, aes(reorder(name, nb_voix), nb_voix)) + 
+  geom_col(fill = databzh$colour5) +
+  coord_flip() + 
+  labs(x = "Candidats", 
+       y = "", 
+       title = "Résultats des élections Européennes 2019 à Rennes - Tour 1\n8ème circonscription", 
+       subtitle = "https://data.rennesmetropole.fr/",
+       caption = "http://data-bzh.fr") +
+  databzhTheme()} %>%
+  ggsave(filename = "europ_circ_8.png", 
+        plot = ., 
+         width = 12.5, height = 10.4, units = "in")
+```
