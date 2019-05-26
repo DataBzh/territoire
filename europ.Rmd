@@ -1,10 +1,6 @@
 ---
-title: "Untitled"
+title: "europeennes"
 author: "Colin Fay"
-date: "11/16/2018"
-output:
-  html_document: default
-  word_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -70,14 +66,15 @@ Résultats pour la ville, en nombre de voix:
   databzhTheme()} %>%
   ggsave(filename = "europ_res_vill.png", 
         plot = ., 
-         width = 12.5, height = 10.4, units = "in")
+         width = 12.5, height = 10.5, units = "in")
 ```
 
 ```{r}
 full %>%
   arrange(desc(nb_voix)) %>%
   select(name, pourcentage, nb_voix) %>%
-  tibble::rownames_to_column("Place")
+  tibble::rownames_to_column("Place") %>% 
+  knitr::kable() %>% clipr::write_clip()
 ```
 
 
@@ -111,7 +108,8 @@ filter(df, NIVEAU_DETAIL == "bu") %>%
     NB_EXPRIMES = sum(NB_EXPRIMES),
     NB_BLANC = sum(NB_BLANC)
     ) %>%
-  knitr::kable()
+  knitr::kable()%>%
+  clipr::write_clip()
 ```
 
 ### Résultats par Circonscription
